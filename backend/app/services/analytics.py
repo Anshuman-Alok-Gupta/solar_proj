@@ -33,6 +33,7 @@ from app.db.models import (
     WeatherHourly,
     WeatherKind,
 )
+from app.services import tariff
 
 
 def plant_today(plant: Plant) -> date:
@@ -512,9 +513,12 @@ def savings(
     include_synthetic: bool = False,
 ) -> dict[str, Any]:
     df = daily_frame(db, plant, start, end, include_synthetic=include_synthetic)
+    slabs = plant.tariff_slabs or None
     missing: list[str] = []
-    if plant.tariff_import_per_kwh is None:
-        missing.append("tariff_import_per_kwh (your electricity tariff) is not set in Settings")
+    if plant.tariff_import_per_kwh is None and not slabs:
+        missing.append(
+            "tariff (per-unit rate or slab tariff from your electricity bill) is not set in Settings"
+        )
     gen = float(df["generation_kwh"].sum()) if not df.empty else 0.0
     measured_self = (
         df["self_consumed_kwh"].notna().any() if "self_consumed_kwh" in df and not df.empty else False
@@ -531,6 +535,8 @@ def savings(
         "generation_kwh": round(gen, 2),
         "tariff_import_per_kwh": plant.tariff_import_per_kwh,
         "tariff_export_per_kwh": plant.tariff_export_per_kwh,
+        "tariff_slabs": slabs,
+        "monthly_consumption_kwh": plant.monthly_consumption_kwh,
         "self_consumption_measured": bool(measured_self),
         "export_measured": bool(measured_export),
         "is_estimate": True,
@@ -542,7 +548,9 @@ def savings(
             "No smart meter / grid data: self-consumption and export are not measured. "
             "Savings are shown as a range between 'all exported' and 'all self-consumed'."
         )
-    if plant.tariff_import_per_kwh is not None:
+    if slabs and not (measured_self or measured_export):
+        _slab_savings(out, df, plant, slabs, gen, missing)
+    elif plant.tariff_import_per_kwh is not None:
         imp = plant.tariff_import_per_kwh
         exp = plant.tariff_export_per_kwh if plant.tariff_export_per_kwh is not None else imp
         if measured_self or measured_export:
@@ -562,27 +570,82 @@ def savings(
                 "yearly consumption; surplus units still banked at the end of the financial year are "
                 "settled at the export rate instead (the 'all exported' figure is the floor)."
             )
-        if plant.installation_cost and out.get("estimated_value") and len(df) >= 7:
-            per_day = out["estimated_value"] / max(len(df), 1)
-            years = plant.installation_cost / (per_day * 365) if per_day > 0 else None
-            out["roi"] = {
-                "installation_cost": plant.installation_cost,
-                "value_to_date": out["estimated_value"],
-                "recovered_fraction": round(out["estimated_value"] / plant.installation_cost, 4),
-                "simple_payback_years_estimate": round(years, 1) if years else None,
-                "note": "Simple payback extrapolates the average daily value over the data period; seasonality is not modelled.",
-            }
+    if plant.installation_cost and out.get("estimated_value") and len(df) >= 7:
+        per_day = out["estimated_value"] / max(len(df), 1)
+        years = plant.installation_cost / (per_day * 365) if per_day > 0 else None
+        out["roi"] = {
+            "installation_cost": plant.installation_cost,
+            "value_to_date": out["estimated_value"],
+            "recovered_fraction": round(out["estimated_value"] / plant.installation_cost, 4),
+            "simple_payback_years_estimate": round(years, 1) if years else None,
+            "note": "Simple payback extrapolates the average daily value over the data period; seasonality is not modelled.",
+        }
     return out
+
+
+def _slab_savings(
+    out: dict[str, Any],
+    df: pd.DataFrame,
+    plant: Plant,
+    slabs: list[dict[str, Any]],
+    gen: float,
+    missing: list[str],
+) -> None:
+    """Net-metering value with a slab tariff (see app.services.tariff)."""
+    exp = plant.tariff_export_per_kwh if plant.tariff_export_per_kwh is not None else 0.0
+    top = max(float(s["rate"]) for s in slabs)
+    out["estimated_value_if_all_exported"] = round(gen * exp, 2)
+    out["estimated_value_if_all_self_consumed"] = round(gen * top, 2)
+    if plant.tariff_export_per_kwh is None:
+        missing.append("surplus settlement rate is not set; surplus units are valued at 0")
+    consumption = plant.monthly_consumption_kwh
+    if not consumption:
+        missing.append(
+            "typical monthly household consumption (units per month before solar) is needed to value "
+            "generation against the slab tariff"
+        )
+        out["notes"].append(
+            "Range: 'all exported' values every unit at the settlement rate; 'all self-consumed' values "
+            "every unit at the highest slab rate (upper bound)."
+        )
+        return
+    months = tariff.monthly_breakdown(df, consumption, slabs, exp)
+    value = sum(m["value"] for m in months)
+    offset = sum(m["offset_kwh"] for m in months)
+    surplus = sum(m["surplus_kwh"] for m in months)
+    out["estimated_value"] = round(value, 2)
+    out["offset_kwh"] = round(offset, 2)
+    out["surplus_kwh"] = round(surplus, 2)
+    out["effective_value_per_kwh"] = round(value / gen, 2) if gen else None
+    out["bill_without_solar_per_month"] = round(tariff.slab_cost(consumption, slabs), 2)
+    out["marginal_rate_per_kwh"] = tariff.marginal_rate(consumption, slabs)
+    out["months"] = months
+    out["notes"].append(
+        f"Slab tariff, net metering: generation cancels the top slabs of an assumed {consumption:g} units/month "
+        f"household consumption; generation above that is surplus valued at the settlement rate ({exp:g}/unit). "
+        "Surplus is banked by the utility and only the balance left at financial-year end is paid at that rate, "
+        "so this is a conservative estimate. Fixed charges, duty and fuel adjustment are not included."
+    )
 
 
 def monthly_savings(db: Session, plant: Plant, *, include_synthetic: bool = False) -> dict[str, Any]:
     df = daily_frame(db, plant, include_synthetic=include_synthetic)
-    if df.empty or plant.tariff_import_per_kwh is None:
+    slabs = plant.tariff_slabs or None
+    if df.empty or (plant.tariff_import_per_kwh is None and not slabs):
         return {
             "plant_id": plant.id,
             "items": [],
-            "missing_inputs": ["tariff_import_per_kwh"] if plant.tariff_import_per_kwh is None else [],
+            "missing_inputs": ["tariff"] if plant.tariff_import_per_kwh is None and not slabs else [],
         }
+    if slabs:
+        exp = plant.tariff_export_per_kwh if plant.tariff_export_per_kwh is not None else 0.0
+        if not plant.monthly_consumption_kwh:
+            return {"plant_id": plant.id, "items": [], "missing_inputs": ["monthly_consumption_kwh"]}
+        items = tariff.monthly_breakdown(df, plant.monthly_consumption_kwh, slabs, exp)
+        for m in items:
+            m["value_if_self_consumed"] = m["value"]
+            m["value_if_exported"] = round(m["generation_kwh"] * exp, 2)
+        return {"plant_id": plant.id, "currency": plant.currency, "is_estimate": True, "items": items}
     df["month"] = pd.to_datetime(df["date"]).dt.to_period("M").astype(str)
     g = df.groupby("month")["generation_kwh"].sum().reset_index()
     imp = plant.tariff_import_per_kwh

@@ -124,6 +124,9 @@ class Plant(Base):
     currency: Mapped[str] = mapped_column(String(8), default="INR", nullable=False)
     tariff_import_per_kwh: Mapped[float | None] = mapped_column(Float)
     tariff_export_per_kwh: Mapped[float | None] = mapped_column(Float)
+    # [{"up_to_kwh": 100, "rate": 4.28}, ..., {"up_to_kwh": null, "rate": 17.68}] per month
+    tariff_slabs: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
+    monthly_consumption_kwh: Mapped[float | None] = mapped_column(Float)
     inverter_manufacturer: Mapped[str | None] = mapped_column(String(128))
     inverter_model: Mapped[str | None] = mapped_column(String(128))
     monitoring_platform: Mapped[str | None] = mapped_column(String(128))

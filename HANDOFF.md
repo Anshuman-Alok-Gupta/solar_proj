@@ -65,8 +65,9 @@ First login: `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Then Settings → create/update t
 | `MODEL_DIR`, `UPLOAD_DIR` | optional | default `./data/models`, `./data/uploads` |
 | `NEXT_PUBLIC_API_BASE_URL` | frontend | backend URL (build-time for Docker) |
 
-Still needed from the owner: an LLM provider key/model (free tier is fine), the true panel
-tilt, the electricity tariff (and export rate / installation cost for ROI).
+Tariff: the plant is on MSEB net metering with a monthly slab tariff (`tariff_slabs`), an assumed household
+consumption (`monthly_consumption_kwh`) and the year-end surplus settlement rate (`tariff_export_per_kwh`).
+Still unknown: true panel tilt (18° assumed) and installation cost (for payback).
 
 ## 4. Data formats
 

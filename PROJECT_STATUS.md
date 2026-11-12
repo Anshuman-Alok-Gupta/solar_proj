@@ -25,14 +25,14 @@ Last updated: 2026-11-12 (see git log for later changes)
 - [x] Scheduled SEMS polling enabled on Render (`SEMS_SYNC_ENABLED=true`, every 900 s; first run ~90 s after each start) to build live readings and score live forecasts.
 - [x] Reports page (`/reports`): live preview, save, PDF export (fpdf2, `GET /reports/{id}/pdf`) and CSV export.
 - [x] Sharing: one-time invite links (viewer / editor roles, 7-day expiry, token stored as SHA-256), member management in Settings, `/invite/<token>` sign-up page; viewers are read-only server-side (AI analyst still allowed). Change-password in Settings. Migration `0003`.
-- [x] Net-metering wording for savings (MSEB/MSEDCL: generation offsets purchases at the bill's per-unit rate; year-end surplus paid at the settlement rate).
+- [x] Slab tariffs under net metering (MSEB/MSEDCL): `tariff_slabs` + `monthly_consumption_kwh` (migration `0004`, `app/services/tariff.py`). Generation cancels the top slabs of the household's monthly use; surplus is valued at the year-end settlement rate (₹2.82 for FY 2026–27). Savings card on Overview, slab editor in Settings.
 - [x] Frontend automated tests (Vitest + Testing Library: API client, formatters, components) in CI.
 - [x] Measured training memory: train all 7 models + SHAP + forecast + detect peaks at ~360 MB RSS, inside Render free's 512 MB (`MALLOC_ARENA_MAX=2` set to limit fragmentation).
 
 ## Incomplete / next priorities
 
-1. Set the per-unit energy charge from the MSEB bill as the import tariff (and the year-end surplus settlement rate as the export rate) in Settings to turn savings into numbers; the plant has net metering and no tariff income.
-2. Confirm the real panel tilt (currently assumed 18°).
+1. Refine the household consumption figure in Settings (currently 400 units/month, from the owner's 300–500 estimate); the savings estimate depends on it.
+2. Panel tilt is unknown (owner confirmed 2026-11-12); 18° stays as the assumption. It only affects the weather feature (tilted irradiance), and the models learn the scale from data.
 3. Import more historical 5-minute operation reports (one per day from the SEMS app) to enable intraday anomaly checks across days.
 4. After a few days of SEMS polling: verify live readings accumulate and live forecast scoring works on the deployed stack.
 5. Optional: e-mail delivery of invite links (currently copy/paste; no SMTP configured).
@@ -67,8 +67,8 @@ npm run dev   # http://localhost:3000  (login: ADMIN_EMAIL / ADMIN_PASSWORD from
 
 ## Test status (2026-11-12)
 
-- Backend: `ruff check` clean, `pytest` **48 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop, provider compat, sharing/roles, PDF).
-- Frontend: `tsc` clean, `eslint` 0 errors, `vitest` **15 passed**, `next build` success (11 routes).
+- Backend: `ruff check` clean, `pytest` **51 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop, provider compat, sharing/roles, PDF, slab tariff).
+- Frontend: `tsc` clean, `eslint` 0 errors, `vitest` **17 passed**, `next build` success (11 routes).
 - Live smoke test against the running stack: all pages and their API calls return 200 with the real 61-day dataset.
 - Details and commands: `HANDOFF.md` §7 and §10.
 

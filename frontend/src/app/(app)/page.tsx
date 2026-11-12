@@ -6,6 +6,7 @@ import { useMemo } from "react";
 
 import { ChartCard } from "@/components/charts/common";
 import { DailyGenerationChart } from "@/components/charts/generation-charts";
+import { SavingsCard } from "@/components/savings-card";
 import { ChartSkeleton, EmptyState, ErrorState, LoadingBlock, PageHeader, SeverityBadge, SourceBadge, StatusDot } from "@/components/state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -123,7 +124,8 @@ export default function OverviewPage() {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            <SavingsCard plantId={plant.id} />
             <Card>
               <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-base"><ShieldAlert className="h-4 w-4" /> Open alerts {s.open_anomalies > 0 && <Badge variant="secondary">{s.open_anomalies}</Badge>}</CardTitle></CardHeader>
               <CardContent>

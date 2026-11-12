@@ -87,6 +87,11 @@ export async function api<T>(
 
 // ---------------------------------------------------------------- types (subset used by the UI)
 
+export interface TariffSlab {
+  up_to_kwh: number | null;
+  rate: number;
+}
+
 export type PlantRole = "owner" | "editor" | "viewer";
 
 /** Authenticated file download (the API needs the bearer token, so a plain link would 401). */
@@ -152,6 +157,9 @@ export interface Plant {
   currency: string;
   tariff_import_per_kwh: number | null;
   tariff_export_per_kwh: number | null;
+  /** Monthly slab tariff; the last slab may have up_to_kwh = null (open-ended). */
+  tariff_slabs?: TariffSlab[] | null;
+  monthly_consumption_kwh?: number | null;
   inverter_manufacturer: string | null;
   inverter_model: string | null;
   monitoring_platform: string | null;
