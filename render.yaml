@@ -13,7 +13,7 @@ databases:
     region: singapore
     databaseName: solar
     user: solar
-    postgresMajorVersion: "16"
+    postgresMajorVersion: "18"
 
 services:
   - type: web
