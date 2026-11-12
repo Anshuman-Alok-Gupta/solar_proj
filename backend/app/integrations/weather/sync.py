@@ -19,8 +19,14 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.models import DailyEnergy, Plant, SyncLog, SyncStatus, WeatherDaily, WeatherHourly, WeatherKind
-from app.integrations.weather.open_meteo import OpenMeteoClient, OpenMeteoError, WeatherBundle
+from app.integrations.weather.open_meteo import (
+    OpenMeteoClient,
+    OpenMeteoError,
+    OpenMeteoRateLimitError,
+    WeatherBundle,
+)
 
 log = logging.getLogger(__name__)
 
@@ -295,12 +301,33 @@ def sync_forecast_weather(
     return res
 
 
+def _latest_forecast_issued_at(db: Session, plant_id: int) -> datetime | None:
+    return db.scalar(
+        select(func.max(WeatherDaily.issued_at)).where(
+            WeatherDaily.plant_id == plant_id, WeatherDaily.kind == WeatherKind.FORECAST
+        )
+    )
+
+
+def _error_text(exc: Exception) -> str:
+    if isinstance(exc, (OpenMeteoError, WeatherSyncError)):
+        return str(exc)
+    return f"{type(exc).__name__}: {exc}"
+
+
 def run_weather_sync(db: Session, plant: Plant, *, mode: str = "incremental", **kwargs) -> SyncLog:
-    """Run observed + forecast sync for a plant with a SyncLog record."""
+    """Run observed + forecast sync for a plant with a SyncLog record.
+
+    The two halves are independent: if one fails the other's data is still kept and the
+    run is logged as PARTIAL. The forecast request is skipped while the stored forecast
+    is younger than ``weather_forecast_min_interval_seconds``.
+    """
     log_row = SyncLog(plant_id=plant.id, source="weather", mode=mode, status=SyncStatus.RUNNING)
     db.add(log_row)
     db.commit()
     details: dict[str, Any] = {}
+    errors: dict[str, str] = {}
+    rate_limited = False
     client = OpenMeteoClient()
     try:
         if mode == "full":
@@ -308,23 +335,55 @@ def run_weather_sync(db: Session, plant: Plant, *, mode: str = "incremental", **
                 "start",
                 plant.installation_date or (_plant_today(plant) - timedelta(days=DEFAULT_HISTORY_DAYS)),
             )
-        details["observed"] = sync_observed_weather(db, plant, client, **kwargs)
-        details["forecast"] = sync_forecast_weather(db, plant, client)
-        log_row.status = SyncStatus.SUCCESS
-        log_row.records_fetched = details["observed"]["hourly"] + details["forecast"]["hourly"]
-        log_row.records_inserted = details["observed"]["daily"] + details["forecast"]["daily"]
-        log_row.message = (
-            f"Observed {details['observed']['daily']} days, forecast {details['forecast']['days']} days"
-        )
-    except (OpenMeteoError, WeatherSyncError) as exc:
-        db.rollback()
-        log_row.status = SyncStatus.FAILED
-        log_row.error = str(exc)
-        log.warning("Weather sync failed for plant %s: %s", plant.id, exc)
+        try:
+            details["observed"] = sync_observed_weather(db, plant, client, **kwargs)
+        except Exception as exc:
+            db.rollback()
+            errors["observed"] = _error_text(exc)
+            rate_limited = isinstance(exc, OpenMeteoRateLimitError)
+            if not isinstance(exc, (OpenMeteoError, WeatherSyncError)):  # pragma: no cover
+                log.exception("Observed weather sync crashed for plant %s", plant.id)
+
+        min_age = timedelta(seconds=get_settings().weather_forecast_min_interval_seconds)
+        latest = _latest_forecast_issued_at(db, plant.id)
+        if latest is not None and datetime.now(UTC) - latest < min_age:
+            details["forecast"] = {"skipped": True, "latest_issued_at": latest.isoformat()}
+        elif rate_limited:
+            # Same quota, so the forecast call would be rejected too; don't spend a request on it.
+            errors["forecast"] = "skipped: Open-Meteo rate limit reached on the observed request"
+        else:
+            try:
+                details["forecast"] = sync_forecast_weather(db, plant, client)
+            except Exception as exc:
+                db.rollback()
+                errors["forecast"] = _error_text(exc)
+                if not isinstance(exc, (OpenMeteoError, WeatherSyncError)):  # pragma: no cover
+                    log.exception("Forecast weather sync crashed for plant %s", plant.id)
+
+        obs, fc = details.get("observed", {}), details.get("forecast", {})
+        log_row.records_fetched = obs.get("hourly", 0) + fc.get("hourly", 0)
+        log_row.records_inserted = obs.get("daily", 0) + fc.get("daily", 0)
+        parts = [f"Observed {obs['daily']} days" if "observed" in details else "observed failed"]
+        if fc.get("skipped"):
+            parts.append("forecast still fresh, not re-fetched")
+        elif "forecast" in details:
+            parts.append(f"forecast {fc['days']} days")
+        else:
+            parts.append("forecast failed")
+        log_row.message = ", ".join(parts)
+        if not errors:
+            log_row.status = SyncStatus.SUCCESS
+        elif len(errors) == 2:
+            log_row.status = SyncStatus.FAILED
+        else:
+            log_row.status = SyncStatus.PARTIAL
+        if errors:
+            log_row.error = "; ".join(f"{k}: {v}" for k, v in errors.items())
+            log.warning("Weather sync %s for plant %s: %s", log_row.status.value, plant.id, log_row.error)
     except Exception as exc:  # pragma: no cover
         db.rollback()
         log_row.status = SyncStatus.FAILED
-        log_row.error = f"{type(exc).__name__}: {exc}"
+        log_row.error = _error_text(exc)
         log.exception("Weather sync crashed for plant %s", plant.id)
     finally:
         client.close()

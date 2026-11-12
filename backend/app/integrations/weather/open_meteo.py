@@ -58,6 +58,23 @@ class OpenMeteoTransientError(OpenMeteoError):
     pass
 
 
+class OpenMeteoRateLimitError(OpenMeteoError):
+    """Hourly/daily quota exhausted (HTTP 429). Not retried: it won't clear within seconds.
+
+    The free API is limited per *IP*, so on shared egress (e.g. Render free tier) other
+    tenants' traffic counts against the same quota.
+    """
+
+
+def _reason(resp: httpx.Response) -> str | None:
+    """Open-Meteo puts a human-readable ``reason`` in its JSON error bodies."""
+    try:
+        reason = resp.json().get("reason")
+    except Exception:
+        reason = resp.text[:200].strip() or None
+    return str(reason) if reason else None
+
+
 @dataclass(slots=True)
 class WeatherBundle:
     """Raw hourly + daily arrays as returned by Open-Meteo, plus metadata."""
@@ -91,14 +108,17 @@ class OpenMeteoClient:
             resp = self._client.get(url, params=params)
         except httpx.TransportError as exc:
             raise OpenMeteoTransientError(f"network error: {exc}") from exc
-        if resp.status_code == 429 or resp.status_code >= 500:
-            raise OpenMeteoTransientError(f"HTTP {resp.status_code} from {url}")
         if resp.status_code != 200:
-            try:
-                reason = resp.json().get("reason")
-            except Exception:
-                reason = resp.text[:200]
-            raise OpenMeteoError(f"HTTP {resp.status_code}: {reason}")
+            reason = _reason(resp)
+            msg = f"HTTP {resp.status_code} from {url}" + (f": {reason}" if reason else "")
+            if resp.status_code == 429:
+                # Minutely limits clear quickly, so retry those; hourly/daily ones don't.
+                if reason and any(w in reason.lower() for w in ("hourly", "daily")):
+                    raise OpenMeteoRateLimitError(msg)
+                raise OpenMeteoTransientError(msg)
+            if resp.status_code >= 500:
+                raise OpenMeteoTransientError(msg)
+            raise OpenMeteoError(msg)
         data = resp.json()
         if data.get("error"):
             raise OpenMeteoError(str(data.get("reason")))

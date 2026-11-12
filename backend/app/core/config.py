@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Weather
     weather_sync_enabled: bool = True
     weather_sync_interval_seconds: int = 3600
+    # Skip the forward-forecast request when the stored forecast is newer than this.
+    # Observed weather still syncs every run; a 7-day forecast doesn't need hourly refreshes.
+    weather_forecast_min_interval_seconds: int = 10800
 
     # Nightly ML upkeep: retrain all models, issue forecasts, detect anomalies
     ml_nightly_enabled: bool = True
