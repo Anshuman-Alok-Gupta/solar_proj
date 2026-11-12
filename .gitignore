@@ -1,0 +1,38 @@
+# --- secrets & local state ---
+.env
+.env.*
+!.env.example
+.local/
+*.log
+
+# --- private data (never commit real household data) ---
+data/uploads/
+data/samples/private/
+data/models/**
+!data/models/.gitkeep
+!data/samples/.gitkeep
+
+# --- python ---
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# --- node ---
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+frontend/*.tsbuildinfo
+
+# --- misc ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- ML training scratch output ---
+catboost_info/

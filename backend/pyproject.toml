@@ -1,0 +1,54 @@
+[project]
+name = "solar-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.1",
+    "anthropic>=2.8.0",
+    "apscheduler>=3.11.3",
+    "catboost>=1.2.10",
+    "fastapi[standard]>=0.162.4",
+    "httpx>=0.28.1",
+    "joblib>=1.6.0",
+    "lightgbm>=4.7.0",
+    "numpy>=2.5.4",
+    "openai>=3.49.0",
+    "openpyxl>=3.1.5",
+    "pandas>=3.1.1",
+    "passlib[bcrypt]>=1.7.4",
+    "psycopg[binary]>=3.3.8",
+    "pydantic>=2.14.3",
+    "pydantic-settings>=2.16.2",
+    "pyjwt>=2.15.1",
+    "python-dateutil>=4.0.0",
+    "python-multipart>=0.0.33",
+    "scikit-learn>=1.9.1",
+    "shap>=0.54.1",
+    "sqlalchemy>=2.1.8",
+    "tenacity>=9.2.1",
+    "uvicorn[standard]>=0.54.0",
+    "xgboost>=3.4.1",
+    "xlrd>=2.0.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1.post1",
+    "pytest-cov>=7.1.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.4",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008", "E501", "UP042", "UP046"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]

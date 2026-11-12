@@ -1,0 +1,77 @@
+# Render Blueprint: Postgres + FastAPI backend + Next.js frontend (all Docker / free plan).
+# Secrets are `sync: false`: Render asks for them when the Blueprint is first applied and never
+# reads them from this file.
+#
+# NEXT_PUBLIC_API_BASE_URL is baked into the frontend bundle at build time (Render passes service
+# env vars to `docker build` as build args). After the first deploy, set it to the backend's
+# public URL (https://solar-backend-XXXX.onrender.com), set CORS_ORIGINS on the backend to the
+# frontend's public URL, then redeploy the frontend.
+
+databases:
+  - name: solar-db
+    plan: free
+    region: singapore
+    databaseName: solar
+    user: solar
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: solar-backend
+    runtime: docker
+    plan: free
+    region: singapore
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: solar-db
+          property: connectionString
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SEMS_ACCOUNT
+        sync: false
+      - key: SEMS_PASSWORD
+        sync: false
+      - key: SEMS_SYNC_ENABLED
+        value: "false"
+      - key: WEATHER_SYNC_ENABLED
+        value: "true"
+      - key: LLM_PROVIDER
+        value: openai_compatible
+      - key: LLM_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai/
+      - key: LLM_MODEL
+        value: gemini-flash-latest
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_TOOL_MODE
+        value: auto
+      # Free instances have no persistent disk: model artifacts/uploads are lost on restart.
+      - key: MODEL_DIR
+        value: /tmp/solar/models
+      - key: UPLOAD_DIR
+        value: /tmp/solar/uploads
+
+  - type: web
+    name: solar-frontend
+    runtime: docker
+    plan: free
+    region: singapore
+    rootDir: frontend
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false
