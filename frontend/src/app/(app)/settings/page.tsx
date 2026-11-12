@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { AccountCard, SharingCard } from "@/components/settings/account-sharing";
 import { EmptyState, PageHeader } from "@/components/state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +66,7 @@ export default function SettingsPage() {
 
 function SettingsForm({ mode, setMode }: { mode: "edit" | "create"; setMode: (m: "edit" | "create") => void }) {
   const { plant, refreshPlants, selectPlant, capabilities } = useApp();
+  const readOnly = mode === "edit" && plant?.access_role === "viewer";
   const [form, setForm] = useState<Form>(() => (plant && mode === "edit" ? fromPlant(plant) : EMPTY));
   const [busy, setBusy] = useState(false);
 
@@ -125,11 +127,11 @@ function SettingsForm({ mode, setMode }: { mode: "edit" | "create"; setMode: (m:
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">Tariff & economics</CardTitle><CardDescription>Savings are estimates. Without a smart meter the app shows a range between all-exported and all-self-consumed.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base">Tariff & economics</CardTitle><CardDescription>Savings are estimates. With net metering (e.g. MSEB/MSEDCL) every generated unit offsets a unit you would have bought; surplus units still banked at the end of the financial year are paid at the settlement rate. Without a smart meter the app shows the range between the two.</CardDescription></CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <Field id="cur" label="Currency"><Input id="cur" value={form.currency} onChange={set("currency")} /></Field>
-            <Field id="imp" label="Import tariff (per kWh)" hint="What you pay the utility"><Input id="imp" type="number" step="0.01" min="0" value={form.tariff_import_per_kwh} onChange={set("tariff_import_per_kwh")} /></Field>
-            <Field id="exp" label="Export / net-metering rate (per kWh)" hint="Leave empty to assume the import tariff"><Input id="exp" type="number" step="0.01" min="0" value={form.tariff_export_per_kwh} onChange={set("tariff_export_per_kwh")} /></Field>
+            <Field id="imp" label="Import tariff (per kWh)" hint="Per-unit energy charge on your electricity bill (₹/kWh)"><Input id="imp" type="number" step="0.01" min="0" value={form.tariff_import_per_kwh} onChange={set("tariff_import_per_kwh")} /></Field>
+            <Field id="exp" label="Surplus settlement rate (per kWh)" hint="What the utility pays for units left at financial-year end. Empty = import tariff"><Input id="exp" type="number" step="0.01" min="0" value={form.tariff_export_per_kwh} onChange={set("tariff_export_per_kwh")} /></Field>
             <Field id="cost" label="Installation cost" hint="Enables payback estimate"><Input id="cost" type="number" step="1" min="0" value={form.installation_cost} onChange={set("installation_cost")} /></Field>
           </CardContent>
         </Card>
@@ -138,10 +140,16 @@ function SettingsForm({ mode, setMode }: { mode: "edit" | "create"; setMode: (m:
           <CardHeader><CardTitle className="text-base">Notes</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <Textarea rows={5} value={form.notes} onChange={set("notes")} aria-label="Notes" />
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : mode === "create" ? "Create plant" : "Save settings"}</Button>
+            <Button type="submit" disabled={busy || readOnly}>{busy ? "Saving…" : mode === "create" ? "Create plant" : "Save settings"}</Button>
+            {readOnly && <p className="text-xs text-muted-foreground">This plant is shared with you as a viewer, so settings are read-only.</p>}
           </CardContent>
         </Card>
       </form>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        {plant && mode === "edit" && (plant.access_role ?? "owner") === "owner" && <SharingCard plant={plant} />}
+        <AccountCard />
+      </div>
     </div>
   );
 }

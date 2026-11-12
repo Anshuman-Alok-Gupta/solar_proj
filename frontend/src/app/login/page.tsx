@@ -47,7 +47,7 @@ export default function LoginPage() {
             </span>
             <CardTitle>Solar Intelligence</CardTitle>
           </div>
-          <CardDescription>Sign in with the account configured on the backend (ADMIN_EMAIL / ADMIN_PASSWORD).</CardDescription>
+          <CardDescription>Sign in to your solar workspace. Invited? Open the invite link you were sent to create your account.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">

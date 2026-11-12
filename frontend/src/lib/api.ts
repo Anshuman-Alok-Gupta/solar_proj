@@ -49,7 +49,7 @@ function qs(query?: Query): string {
 
 export async function api<T>(
   path: string,
-  opts: { method?: string; body?: unknown; query?: Query; form?: FormData; raw?: boolean } = {},
+  opts: { method?: string; body?: unknown; query?: Query; form?: FormData; raw?: boolean; blob?: boolean } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {};
   const token = getToken();
@@ -65,7 +65,7 @@ export async function api<T>(
     headers,
     body,
   });
-  if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/auth/login")) {
+  if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/auth/login") && !path.startsWith("/invitations/")) {
     setToken(null);
     if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
   }
@@ -80,11 +80,56 @@ export async function api<T>(
     throw new ApiError(res.status, detail);
   }
   if (res.status === 204) return undefined as T;
+  if (opts.blob) return (await res.blob()) as T;
   if (opts.raw) return (await res.text()) as T;
   return (await res.json()) as T;
 }
 
 // ---------------------------------------------------------------- types (subset used by the UI)
+
+export type PlantRole = "owner" | "editor" | "viewer";
+
+/** Authenticated file download (the API needs the bearer token, so a plain link would 401). */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const blob = await api<Blob>(path, { blob: true });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export interface Member {
+  user_id: number;
+  email: string;
+  full_name: string | null;
+  role: Exclude<PlantRole, "owner">;
+  created_at: string;
+}
+
+export interface Invitation {
+  id: number;
+  email: string;
+  role: Exclude<PlantRole, "owner">;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+  token?: string;
+}
+
+export interface InvitationInfo {
+  email: string;
+  plant_name: string;
+  role: Exclude<PlantRole, "owner">;
+  invited_by: string | null;
+  expires_at: string;
+  status: Invitation["status"];
+  account_exists: boolean;
+}
 
 export interface User {
   id: number;
@@ -113,6 +158,8 @@ export interface Plant {
   sems_station_id: string | null;
   is_demo: boolean;
   notes: string | null;
+  /** The signed-in user's access to this plant. */
+  access_role?: PlantRole;
   inverters: { id: number; serial_number: string; name: string | null; model: string | null; rated_power_kw: number | null }[];
 }
 
@@ -350,6 +397,16 @@ export const endpoints = {
   reportPreview: (id: number, kind: string) => api<Report>(`/plants/${id}/reports/preview`, { query: { kind } }),
   reportGenerate: (id: number, kind: string) => api<Report>(`/plants/${id}/reports/generate`, { method: "POST", query: { kind } }),
   reportCsvUrl: (id: number, rid: number) => `${API_BASE}/api/plants/${id}/reports/${rid}/csv`,
+  reportDownload: (id: number, rid: number, format: "csv" | "pdf") => downloadFile(`/plants/${id}/reports/${rid}/${format}`, `solar_report_${rid}.${format}`),
+  reportDelete: (id: number, rid: number) => api<void>(`/plants/${id}/reports/${rid}`, { method: "DELETE" }),
+  members: (id: number) => api<{ owner: { id: number; email: string; full_name: string | null } | null; members: Member[]; invitations: Invitation[] }>(`/plants/${id}/members`),
+  invite: (id: number, email: string, role: Member["role"]) => api<Invitation>(`/plants/${id}/invitations`, { body: { email, role } }),
+  revokeInvite: (id: number, inviteId: number) => api<void>(`/plants/${id}/invitations/${inviteId}`, { method: "DELETE" }),
+  setMemberRole: (id: number, userId: number, role: Member["role"]) => api<{ role: string }>(`/plants/${id}/members/${userId}`, { method: "PATCH", body: { role } }),
+  removeMember: (id: number, userId: number) => api<void>(`/plants/${id}/members/${userId}`, { method: "DELETE" }),
+  invitation: (token: string) => api<InvitationInfo>(`/invitations/${encodeURIComponent(token)}`),
+  acceptInvitation: (token: string, password: string, full_name?: string) => api<{ access_token: string }>(`/invitations/${encodeURIComponent(token)}/accept`, { body: { password, full_name } }),
+  changePassword: (current_password: string, new_password: string) => api<void>("/auth/change-password", { body: { current_password, new_password } }),
   aiStatus: (id: number) => api<{ configured: boolean; provider: string; model: string | null; tool_mode: string; suggested_questions: string[]; setup_hint: string | null }>(`/plants/${id}/ai/status`),
   aiChat: (id: number, message: string, conversation_id?: number | null) => api<{ conversation_id: number; reply: string; tool_calls: { tool: string; input: Record<string, unknown>; ok: boolean; error?: string }[]; usage: Record<string, unknown> }>(`/plants/${id}/ai/chat`, { body: { message, conversation_id } }),
   aiConversations: (id: number) => api<{ items: { id: number; title: string | null; updated_at: string; message_count: number }[] }>(`/plants/${id}/ai/conversations`),

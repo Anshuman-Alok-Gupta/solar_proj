@@ -13,6 +13,7 @@ interface AppContextValue {
   selectPlant: (id: number) => void;
   refreshPlants: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -85,6 +86,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [loadSession],
   );
 
+  const loginWithToken = useCallback(
+    async (token: string) => {
+      setToken(token);
+      setReady(false);
+      await loadSession();
+    },
+    [loadSession],
+  );
+
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
@@ -102,9 +112,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       selectPlant,
       refreshPlants,
       login,
+      loginWithToken,
       logout,
     }),
-    [ready, user, plants, plantId, capabilities, selectPlant, refreshPlants, login, logout],
+    [ready, user, plants, plantId, capabilities, selectPlant, refreshPlants, login, loginWithToken, logout],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

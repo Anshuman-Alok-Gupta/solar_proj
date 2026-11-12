@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BarChart3, Bot, Database, FlaskConical, LayoutDashboard, LogOut, Menu, Settings, ShieldAlert, Sun, TrendingUp } from "lucide-react";
+import { Activity, BarChart3, Bot, Database, Eye, FileText, FlaskConical, LayoutDashboard, LogOut, Menu, Settings, ShieldAlert, Sun, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -18,6 +18,7 @@ const NAV = [
   { href: "/forecasting", label: "Forecasting", icon: TrendingUp },
   { href: "/anomalies", label: "Anomaly Centre", icon: ShieldAlert },
   { href: "/analyst", label: "AI Energy Analyst", icon: Bot },
+  { href: "/reports", label: "Reports", icon: FileText },
   { href: "/model-lab", label: "Model Lab", icon: FlaskConical },
   { href: "/data", label: "Data Management", icon: Database },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -116,6 +117,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
           <div className="min-w-0 flex-1" />
+          {plant?.access_role === "viewer" && (
+            <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground" title="Shared with you as a viewer: changes are disabled">
+              <Eye className="h-3.5 w-3.5" /> View only
+            </span>
+          )}
           {plants.length > 0 && (
             <Select value={plant ? String(plant.id) : undefined} onValueChange={(v) => v && selectPlant(Number(v))}>
               <SelectTrigger className="w-[220px]" aria-label="Select plant">
