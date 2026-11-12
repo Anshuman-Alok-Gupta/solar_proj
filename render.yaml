@@ -1,19 +1,8 @@
-# Render Blueprint: Postgres + FastAPI backend + Next.js frontend (all Docker / free plan).
+# Render Blueprint: FastAPI backend only (Docker, free plan).
+# Frontend -> Vercel (frontend/), database -> Neon free Postgres.
 # Secrets are `sync: false`: Render asks for them when the Blueprint is first applied and never
-# reads them from this file.
-#
-# NEXT_PUBLIC_API_BASE_URL is baked into the frontend bundle at build time (Render passes service
-# env vars to `docker build` as build args). After the first deploy, set it to the backend's
-# public URL (https://solar-backend-XXXX.onrender.com), set CORS_ORIGINS on the backend to the
-# frontend's public URL, then redeploy the frontend.
-
-databases:
-  - name: solar-db
-    plan: free
-    region: singapore
-    databaseName: solar
-    user: solar
-    postgresMajorVersion: "18"
+# reads them from this file. DATABASE_URL is the Neon connection string (postgresql://...;
+# the app adds the psycopg driver itself). CORS_ORIGINS is the Vercel URL.
 
 services:
   - type: web
@@ -27,9 +16,7 @@ services:
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: solar-db
-          property: connectionString
+        sync: false
       - key: APP_ENV
         value: production
       - key: SECRET_KEY
@@ -63,15 +50,3 @@ services:
         value: /tmp/solar/models
       - key: UPLOAD_DIR
         value: /tmp/solar/uploads
-
-  - type: web
-    name: solar-frontend
-    runtime: docker
-    plan: free
-    region: singapore
-    rootDir: frontend
-    dockerfilePath: ./Dockerfile
-    autoDeploy: true
-    envVars:
-      - key: NEXT_PUBLIC_API_BASE_URL
-        sync: false
