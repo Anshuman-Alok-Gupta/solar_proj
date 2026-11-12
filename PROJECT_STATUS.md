@@ -21,17 +21,21 @@ Last updated: 2026-11-12 (see git log for later changes)
 
 - [x] Live LLM: Google Gemini via its OpenAI-compatible endpoint (`gemini-3.5-flash` + fallbacks); native tool calling verified end to end on the deployed stack (thought signatures echoed back).
 - [x] Deployed (2026-11-12): Vercel frontend, Render backend (Blueprint), Neon Postgres with the real data; model artifacts persisted in Postgres. See `HANDOFF.md` §8.
+- [x] Keep-awake: cron-job.org pings `/api/health` every 10 min (first external ping verified in Render logs 2026-11-12 11:40 IST, 200 OK).
+- [x] Scheduled SEMS polling enabled on Render (`SEMS_SYNC_ENABLED=true`, every 900 s; first run ~90 s after each start) to build live readings and score live forecasts.
+- [x] Reports page (`/reports`): live preview, save, PDF export (fpdf2, `GET /reports/{id}/pdf`) and CSV export.
+- [x] Sharing: one-time invite links (viewer / editor roles, 7-day expiry, token stored as SHA-256), member management in Settings, `/invite/<token>` sign-up page; viewers are read-only server-side (AI analyst still allowed). Change-password in Settings. Migration `0003`.
+- [x] Net-metering wording for savings (MSEB/MSEDCL: generation offsets purchases at the bill's per-unit rate; year-end surplus paid at the settlement rate).
+- [x] Frontend automated tests (Vitest + Testing Library: API client, formatters, components) in CI.
+- [x] Measured training memory: train all 7 models + SHAP + forecast + detect peaks at ~360 MB RSS, inside Render free's 512 MB (`MALLOC_ARENA_MAX=2` set to limit fragmentation).
 
 ## Incomplete / next priorities
 
-1. Set up the free keep-awake ping (cron-job.org → backend `/api/health` every 10 min) so the scheduler keeps running.
-2. Enable scheduled SEMS polling (`SEMS_SYNC_ENABLED=true`) to build 15-minute live readings; verify the first days of live forecast scoring.
-3. Confirm the real panel tilt (currently assumed 18°) and set the electricity tariff in Settings to turn savings into numbers.
-4. Import more historical 5-minute operation reports (one per day from the SEMS app) to enable intraday anomaly checks across days.
-5. PDF export of reports (CSV exists); multi-user invitations (schema supports ownership, no UI).
-6. Docker Compose has not been executed on the dev machine (Docker not installed); the backend Docker image is built and run on Render, CI runs tests on PostgreSQL in GitHub Actions.
-8. Neon free compute is 0.5 GB storage / limited CU-hours; Render free has 512 MB RAM – training the heavier models (CatBoost/XGBoost) on Render may run out of memory; the fallback is to run training locally with `DATABASE_URL` pointed at Neon (artifacts land in `model_artifacts` and the deployed backend picks them up).
-7. Frontend automated tests (only type-check + lint + build are automated).
+1. Set the per-unit energy charge from the MSEB bill as the import tariff (and the year-end surplus settlement rate as the export rate) in Settings to turn savings into numbers; the plant has net metering and no tariff income.
+2. Confirm the real panel tilt (currently assumed 18°).
+3. Import more historical 5-minute operation reports (one per day from the SEMS app) to enable intraday anomaly checks across days.
+4. After a few days of SEMS polling: verify live readings accumulate and live forecast scoring works on the deployed stack.
+5. Optional: e-mail delivery of invite links (currently copy/paste; no SMTP configured).
 
 ## Known issues / caveats
 
@@ -39,6 +43,8 @@ Last updated: 2026-11-12 (see git log for later changes)
 - SEMS legacy endpoints (`GetMonitorDetailByPowerstationId`, power chart) return empty for this account; not used.
 - "new" SEMS login mode fails with code 100004 for this account; the client falls back to web/legacy automatically.
 - Open-Meteo archive lags ~6 days; recent days use archived forecasts (labelled by `source`).
+- Docker Compose has never been run on the dev machine (Docker not installed) and is out of scope; the backend image is built on Render and CI runs tests on PostgreSQL.
+- Neon free: 0.5 GB storage / limited compute hours. Render free: 512 MB RAM (training measured at ~360 MB peak with the current ~60 days; re-check as history grows; fallback is training locally with `DATABASE_URL` pointed at Neon).
 - The ESLint rule `@next/next/no-location-assign-relative-destination` warns on the 401 redirect in `frontend/src/lib/api.ts` (intentional hard redirect to clear state).
 
 ## How to run (local, no Docker)
@@ -61,12 +67,12 @@ npm run dev   # http://localhost:3000  (login: ADMIN_EMAIL / ADMIN_PASSWORD from
 
 ## Test status (2026-11-12)
 
-- Backend: `ruff check` clean, `pytest` **34 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop).
-- Frontend: `tsc` clean, `eslint` 0 errors, `next build` success (9 routes).
+- Backend: `ruff check` clean, `pytest` **48 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop, provider compat, sharing/roles, PDF).
+- Frontend: `tsc` clean, `eslint` 0 errors, `vitest` **15 passed**, `next build` success (11 routes).
 - Live smoke test against the running stack: all pages and their API calls return 200 with the real 61-day dataset.
 - Details and commands: `HANDOFF.md` §7 and §10.
 
 ```
 cd backend && uv run pytest -q
-cd frontend && npx tsc --noEmit && npm run lint && npm run build
+cd frontend && npx tsc --noEmit && npm run lint && npm test && npm run build
 ```

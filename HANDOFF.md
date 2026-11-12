@@ -59,6 +59,7 @@ First login: `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Then Settings → create/update t
 | `LLM_PROVIDER` | for AI | `openai_compatible` (default) \| `anthropic` \| `none` |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | for AI | any OpenAI-compatible endpoint. Examples: Groq `https://api.groq.com/openai/v1` + `llama-3.3-70b-versatile`; OpenRouter `https://openrouter.ai/api/v1` + a `:free` model; Gemini `https://generativelanguage.googleapis.com/v1beta/openai` + `gemini-2.0-flash`; Ollama `http://localhost:11434/v1` + `llama3.1` (no key) |
 | `LLM_FALLBACK_MODELS` | optional | comma-separated models tried when the primary returns 5xx/429/times out (e.g. `gemini-3-flash-preview,gemini-flash-lite-latest`); `LLM_TIMEOUT_SECONDS` (45) / `LLM_MAX_RETRIES` (1) |
+| `MALLOC_ARENA_MAX` | optional | set to `2` on small hosts (Render free) to limit memory fragmentation |
 | `LLM_TOOL_MODE` | optional | `auto` (native function calling, fallback to context injection), `native`, `context` |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | only if `LLM_PROVIDER=anthropic` | |
 | `MODEL_DIR`, `UPLOAD_DIR` | optional | default `./data/models`, `./data/uploads` |
@@ -89,14 +90,16 @@ curl -X POST "http://localhost:8000/api/plants/1/forecasts/issue?days=3" -H "Aut
 curl -X POST http://localhost:8000/api/plants/1/anomalies/detect -H "Authorization: Bearer <token>"
 ```
 
-Artifacts: `data/models/plant_<id>/<timestamp>_<algorithm>.joblib` (gitignored). Code: `backend/app/ml/`.
+Artifacts: `data/models/plant_<id>/<timestamp>_<algorithm>.joblib` (gitignored) plus a copy in Postgres `model_artifacts`. Code: `backend/app/ml/`.
+
+Reports: `GET /api/plants/{id}/reports/{rid}/pdf` (fpdf2, `app/services/report_pdf.py`) and `/csv`; UI at `/reports`.
 Add an algorithm: extend `make_model()` and `ALGORITHMS` in `train.py`; SHAP works for any sklearn-compatible tree model.
 
 ## 7. Tests
 
 ```powershell
 cd backend;  uv run ruff check . ; uv run pytest -q
-cd frontend; npx tsc --noEmit ; npm run lint ; npm run build
+cd frontend; npx tsc --noEmit ; npm run lint ; npm test ; npm run build
 ```
 
 Latest local run (2026-11-12): see the bottom of this file.
@@ -125,6 +128,19 @@ Latest local run (2026-11-12): see the bottom of this file.
 * **Gemini free tier** occasionally returns 503 "high demand"; `LLM_FALLBACK_MODELS` lists models tried in
   order (sticky per answer so tool-call thought signatures stay valid).
 * Data was migrated with `pg_dump -Fc --no-owner --no-privileges` → `pg_restore` into Neon.
+* **Keep-awake** is live: cron-job.org → `GET /api/health` every 10 min (verified in Render logs).
+* **SEMS polling** runs on Render (`SEMS_SYNC_ENABLED=true`, 900 s). The scheduler runs the first SEMS sync
+  ~90 s and the first weather sync ~45 s after each start, then on the interval.
+* **Memory:** full training + SHAP peaks at ~360 MB of the 512 MB; `MALLOC_ARENA_MAX=2` limits glibc fragmentation.
+
+### Sharing and accounts
+
+* Owners create invite links in Settings → Sharing (`POST /api/plants/{id}/invitations`). The raw token is
+  returned once; only its SHA-256 is stored. Links expire after 7 days and are one-time.
+* The invitee opens `/invite/<token>` and sets a password (or enters the existing account's password).
+* Roles: **viewer** = read-only (enforced in `get_plant_for_user` for every non-GET request except `/ai/`),
+  **editor** = everything except sharing and deleting the plant (`PlantOwnerDep`). Superusers act as owners.
+* `POST /api/auth/change-password` backs the "Your account" card in Settings.
 
 ### Docker / self-hosted
 
