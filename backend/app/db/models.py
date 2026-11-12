@@ -27,6 +27,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -367,6 +368,19 @@ class ModelVersion(Base):
     metric_rows: Mapped[list[ModelMetric]] = relationship(
         back_populates="model_version", cascade="all, delete-orphan"
     )
+
+
+class ModelArtifact(Base):
+    """Serialized model (joblib bytes). Durable copy for hosts with ephemeral disks."""
+
+    __tablename__ = "model_artifacts"
+
+    model_version_id: Mapped[int] = mapped_column(
+        ForeignKey("model_versions.id", ondelete="CASCADE"), primary_key=True
+    )
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 class ModelMetric(Base):

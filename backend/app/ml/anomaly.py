@@ -200,7 +200,7 @@ def detect_anomalies(
             expected = res["expected"]
             sigma = res["residual_std"]
             X = res["features"]
-            art = load_artifact(mv.artifact_path)
+            art = load_artifact(mv)
         except NoActiveModel:
             pass
         except Exception as exc:  # pragma: no cover

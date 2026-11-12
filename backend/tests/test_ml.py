@@ -145,3 +145,34 @@ def test_end_to_end_training_forecast_and_anomalies(db, client, auth, plant):
         f"/api/plants/{pid}/anomalies/{first['id']}", headers=auth, json={"status": "acknowledged"}
     )
     assert r.status_code == 200 and r.json()["status"] == "acknowledged"
+
+
+def test_artifact_restored_from_db_when_file_missing(db, client, auth, plant):
+    """Ephemeral-disk hosts: artifacts survive the loss of MODEL_DIR via model_artifacts."""
+    from pathlib import Path
+
+    from app.db.models import ModelArtifact, ModelVersion, Plant
+    from app.ml.inference import NoActiveModel, expected_for_dates
+    from app.ml.registry import get_active
+
+    pid = plant["id"]
+    days = seed_days(db, pid, n=70)
+    p = db.get(Plant, pid)
+    train_models(db, p, algorithms=["baseline_irradiance", "random_forest"])
+    db.commit()
+    mv = get_active(db, pid)
+    blob = db.get(ModelArtifact, mv.id)
+    assert blob is not None and blob.size_bytes == len(blob.data) > 0
+
+    for v in db.query(ModelVersion).filter(ModelVersion.plant_id == pid):
+        Path(v.artifact_path).unlink()  # simulate a fresh container
+    res = expected_for_dates(db, p, days[-5:], model=mv)
+    assert len(res["expected"]) > 0
+    assert Path(mv.artifact_path).is_file()  # re-cached
+
+    # no stored copy and no file -> clean NoActiveModel, not a FileNotFoundError
+    Path(mv.artifact_path).unlink()
+    db.delete(blob)
+    db.flush()
+    with pytest.raises(NoActiveModel):
+        expected_for_dates(db, p, days[-5:], model=mv)

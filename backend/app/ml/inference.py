@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.models import DailyEnergy, DataSource, Forecast, ModelVersion, Plant, WeatherDaily, WeatherKind
 from app.ml.explain import explain_row
 from app.ml.features import TARGET, add_calendar, add_lags, weather_rows_to_frame
-from app.ml.registry import get_active, load_artifact
+from app.ml.registry import ArtifactMissing, get_active, load_artifact
 from app.services.analytics import plant_today
 
 log = logging.getLogger(__name__)
@@ -39,6 +39,13 @@ WEATHER_COLS = [
 
 class NoActiveModel(RuntimeError):
     pass
+
+
+def _load_active_artifact(mv: ModelVersion) -> dict[str, Any]:
+    try:
+        return load_artifact(mv)
+    except ArtifactMissing as exc:
+        raise NoActiveModel(f"{exc}") from exc
 
 
 def _history(db: Session, plant: Plant, *, include_synthetic: bool = False) -> pd.DataFrame:
@@ -198,7 +205,7 @@ def expected_for_dates(
     mv = model or get_active(db, plant.id)
     if mv is None:
         raise NoActiveModel("No active model; train one first")
-    art = load_artifact(mv.artifact_path)
+    art = _load_active_artifact(mv)
     hist = _history(db, plant)
     weather = observed_weather(db, plant)
     X = _feature_matrix(hist, weather, dates, plant.latitude, art["features"])
@@ -218,7 +225,7 @@ def issue_forecasts(
     mv = model or get_active(db, plant.id)
     if mv is None:
         raise NoActiveModel("No active model; train one first")
-    art = load_artifact(mv.artifact_path)
+    art = _load_active_artifact(mv)
     today = plant_today(plant)
     targets = [today + timedelta(days=i) for i in range(1, days + 1)]
     hist = _history(db, plant)

@@ -107,7 +107,7 @@ def model_detail(model_id: int, plant: PlantDep, db: DB) -> dict:
     out = _mv_out(mv)
     if mv.artifact_path:
         try:
-            art = load_artifact(mv.artifact_path)
+            art = load_artifact(mv)
             out["validation_predictions"] = art.get("val_predictions", [])
             out["test_predictions"] = art.get("test_predictions", [])
             out["folds"] = art.get("folds", [])
@@ -140,7 +140,7 @@ def explain(plant: PlantDep, db: DB, model_id: int | None = None) -> dict:
             "shap": None,
             "note": "Baselines have no SHAP explanation; feature importance not applicable",
         }
-    art = load_artifact(mv.artifact_path)
+    art = load_artifact(mv)
     from app.ml.train import load_training_data
 
     frame, _ = load_training_data(db, plant)
