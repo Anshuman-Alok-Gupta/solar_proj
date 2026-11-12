@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc, select
 
 from app.api.deps import DB, PlantDep
-from app.db.models import Anomaly, AnomalySeverity, AnomalyStatus, ModelVersion
+from app.db.models import Anomaly, AnomalySeverity, AnomalyStatus, ModelVersion, SyncLog
 from app.ml import anomaly as anomaly_svc
 from app.ml.explain import global_importance
 from app.ml.inference import (
@@ -78,6 +78,47 @@ def train(plant: PlantDep, db: DB, payload: TrainRequest | None = None) -> dict:
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+
+@router.post("/ml/nightly-run")
+def nightly_run(plant: PlantDep, db: DB, force_train: bool = False) -> dict:
+    """Run the nightly upkeep now (retrain if data changed, forecasts, anomaly detection)."""
+    from app.ml.nightly import run_nightly
+
+    row = run_nightly(db, plant, force_train=force_train)
+    return _nightly_out(row)
+
+
+@router.get("/ml/nightly-status")
+def nightly_status(plant: PlantDep, db: DB) -> dict:
+    from app.core.config import get_settings
+    from app.scheduler import next_run
+
+    s = get_settings()
+    last = db.scalar(
+        select(SyncLog)
+        .where(SyncLog.plant_id == plant.id, SyncLog.source == "ml")
+        .order_by(desc(SyncLog.started_at))
+        .limit(1)
+    )
+    nxt = next_run("ml_nightly")
+    return {
+        "enabled": s.ml_nightly_enabled,
+        "schedule": f"daily at {s.ml_nightly_hour:02d}:00 {s.ml_nightly_timezone}",
+        "next_run": nxt.isoformat() if nxt else None,
+        "last_run": _nightly_out(last) if last else None,
+    }
+
+
+def _nightly_out(row) -> dict:
+    return {
+        "status": row.status.value,
+        "started_at": row.started_at.isoformat(),
+        "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+        "message": row.message,
+        "error": row.error,
+        "details": row.details,
+    }
 
 
 @router.get("/ml/models")

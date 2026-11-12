@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 os.environ.setdefault("SEMS_SYNC_ENABLED", "false")
 os.environ.setdefault("WEATHER_SYNC_ENABLED", "false")
+os.environ.setdefault("ML_NIGHTLY_ENABLED", "false")
 os.environ.setdefault("LLM_PROVIDER", "none")
 
 from app.core.config import get_settings  # noqa: E402

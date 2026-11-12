@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     weather_sync_enabled: bool = True
     weather_sync_interval_seconds: int = 3600
 
+    # Nightly ML upkeep: retrain all models, issue forecasts, detect anomalies
+    ml_nightly_enabled: bool = True
+    ml_nightly_hour: int = 21  # local hour in ml_nightly_timezone (after sunset)
+    ml_nightly_timezone: str = "Asia/Kolkata"
+
     # LLM for the AI Energy Analyst (provider-agnostic; any OpenAI-compatible free API works)
     llm_provider: str = "openai_compatible"  # openai_compatible | anthropic | none
     llm_base_url: str | None = (

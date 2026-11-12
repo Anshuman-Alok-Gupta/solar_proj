@@ -28,6 +28,7 @@ Last updated: 2026-11-12 (see git log for later changes)
 - [x] Slab tariffs under net metering (MSEB/MSEDCL): `tariff_slabs` + `monthly_consumption_kwh` (migration `0004`, `app/services/tariff.py`). Generation cancels the top slabs of the household's monthly use; surplus is valued at the year-end settlement rate (₹2.82 for FY 2026–27). Savings card on Overview, slab editor in Settings.
 - [x] SEMS placeholder meter values (export 0 / import 0 / consumption = production) are no longer stored as measurements.
 - [x] Intraday history from SEMS power curves (no manual report downloads).
+- [x] Nightly ML upkeep (21:00 IST, `app/ml/nightly.py`): retrain all 7 models when the data changed, keep the active algorithm unless another is >5 % better on validation, issue 3-day forecasts, run anomaly detection, prune model files older than the last 2 runs (metrics kept). Logged as `sync_logs` source `ml`; `POST /ml/nightly-run`, `GET /ml/nightly-status`.
 - [x] Frontend automated tests (Vitest + Testing Library: API client, formatters, components) in CI.
 - [x] Measured training memory: train all 7 models + SHAP + forecast + detect peaks at ~360 MB RSS, inside Render free's 512 MB (`MALLOC_ARENA_MAX=2` set to limit fragmentation).
 
@@ -41,7 +42,7 @@ Last updated: 2026-11-12 (see git log for later changes)
 
 ## Known issues / caveats
 
-- Only ~60 days of history: model metrics are noisy; the selected model is a weather-scaled baseline (documented in `docs/experiments.md`).
+- Only ~60 days of history: model metrics are noisy. The nightly retrain picks the active model automatically (with ~61 days Random Forest overtook the weather-scaled baseline on validation MAE).
 - SEMS legacy endpoints (`GetMonitorDetailByPowerstationId`, power chart) return empty for this account; not used.
 - "new" SEMS login mode fails with code 100004 for this account; the client falls back to web/legacy automatically.
 - Open-Meteo archive lags ~6 days; recent days use archived forecasts (labelled by `source`).
@@ -69,7 +70,7 @@ npm run dev   # http://localhost:3000  (login: ADMIN_EMAIL / ADMIN_PASSWORD from
 
 ## Test status (2026-11-12)
 
-- Backend: `ruff check` clean, `pytest` **53 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop, provider compat, sharing/roles, PDF, slab tariff).
+- Backend: `ruff check` clean, `pytest` **55 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop, provider compat, sharing/roles, PDF, slab tariff).
 - Frontend: `tsc` clean, `eslint` 0 errors, `vitest` **17 passed**, `next build` success (11 routes).
 - Live smoke test against the running stack: all pages and their API calls return 200 with the real 61-day dataset.
 - Details and commands: `HANDOFF.md` §7 and §10.

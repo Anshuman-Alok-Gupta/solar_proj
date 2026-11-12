@@ -60,6 +60,7 @@ First login: `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Then Settings → create/update t
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | for AI | any OpenAI-compatible endpoint. Examples: Groq `https://api.groq.com/openai/v1` + `llama-3.3-70b-versatile`; OpenRouter `https://openrouter.ai/api/v1` + a `:free` model; Gemini `https://generativelanguage.googleapis.com/v1beta/openai` + `gemini-2.0-flash`; Ollama `http://localhost:11434/v1` + `llama3.1` (no key) |
 | `LLM_FALLBACK_MODELS` | optional | comma-separated models tried when the primary returns 5xx/429/times out (e.g. `gemini-3-flash-preview,gemini-flash-lite-latest`); `LLM_TIMEOUT_SECONDS` (45) / `LLM_MAX_RETRIES` (1) |
 | `MALLOC_ARENA_MAX` | optional | set to `2` on small hosts (Render free) to limit memory fragmentation |
+| `ML_NIGHTLY_ENABLED`, `ML_NIGHTLY_HOUR`, `ML_NIGHTLY_TIMEZONE` | optional | nightly retrain + forecasts + anomaly detection (default on, 21:00 Asia/Kolkata) |
 | `LLM_TOOL_MODE` | optional | `auto` (native function calling, fallback to context injection), `native`, `context` |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | only if `LLM_PROVIDER=anthropic` | |
 | `MODEL_DIR`, `UPLOAD_DIR` | optional | default `./data/models`, `./data/uploads` |
@@ -92,6 +93,9 @@ curl -X POST http://localhost:8000/api/plants/1/anomalies/detect -H "Authorizati
 ```
 
 Artifacts: `data/models/plant_<id>/<timestamp>_<algorithm>.joblib` (gitignored) plus a copy in Postgres `model_artifacts`. Code: `backend/app/ml/`.
+
+Nightly upkeep: `app/ml/nightly.py` runs at `ML_NIGHTLY_HOUR` (scheduler cron job `ml_nightly`); trigger manually with
+`POST /api/plants/{id}/ml/nightly-run` (`?force_train=true` retrains even without new data); status at `GET .../ml/nightly-status`.
 
 Reports: `GET /api/plants/{id}/reports/{rid}/pdf` (fpdf2, `app/services/report_pdf.py`) and `/csv`; UI at `/reports`.
 Add an algorithm: extend `make_model()` and `ALGORITHMS` in `train.py`; SHAP works for any sklearn-compatible tree model.
