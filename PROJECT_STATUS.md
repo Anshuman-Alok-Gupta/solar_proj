@@ -19,14 +19,18 @@ Last updated: 2026-11-12 (see git log for later changes)
 - [x] Tests: backend pytest suite (energy store precedence, ingestion, SEMS client with mocked HTTP, ML leakage/splits/end-to-end, API incl. access control, imports, reports, AI loop with fake providers).
 - [x] Dockerfiles, docker-compose, GitHub Actions CI, `.env.example`, docs.
 
+- [x] Live LLM: Google Gemini via its OpenAI-compatible endpoint (`gemini-3.5-flash` + fallbacks); native tool calling verified end to end on the deployed stack (thought signatures echoed back).
+- [x] Deployed (2026-11-12): Vercel frontend, Render backend (Blueprint), Neon Postgres with the real data; model artifacts persisted in Postgres. See `HANDOFF.md` §8.
+
 ## Incomplete / next priorities
 
-1. Connect a free LLM provider: fill `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` in `.env` and try the analyst (both tool modes are tested with fakes, not yet with a live provider).
+1. Set up the free keep-awake ping (cron-job.org → backend `/api/health` every 10 min) so the scheduler keeps running.
 2. Enable scheduled SEMS polling (`SEMS_SYNC_ENABLED=true`) to build 15-minute live readings; verify the first days of live forecast scoring.
 3. Confirm the real panel tilt (currently assumed 18°) and set the electricity tariff in Settings to turn savings into numbers.
 4. Import more historical 5-minute operation reports (one per day from the SEMS app) to enable intraday anomaly checks across days.
 5. PDF export of reports (CSV exists); multi-user invitations (schema supports ownership, no UI).
-6. Docker Compose has not been executed on the dev machine (Docker not installed); CI runs tests on PostgreSQL in GitHub Actions.
+6. Docker Compose has not been executed on the dev machine (Docker not installed); the backend Docker image is built and run on Render, CI runs tests on PostgreSQL in GitHub Actions.
+8. Neon free compute is 0.5 GB storage / limited CU-hours; Render free has 512 MB RAM – training the heavier models (CatBoost/XGBoost) on Render may run out of memory; the fallback is to run training locally with `DATABASE_URL` pointed at Neon (artifacts land in `model_artifacts` and the deployed backend picks them up).
 7. Frontend automated tests (only type-check + lint + build are automated).
 
 ## Known issues / caveats

@@ -58,6 +58,7 @@ First login: `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Then Settings → create/update t
 | `WEATHER_SYNC_ENABLED`, `WEATHER_SYNC_INTERVAL_SECONDS` | optional | hourly Open-Meteo sync |
 | `LLM_PROVIDER` | for AI | `openai_compatible` (default) \| `anthropic` \| `none` |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | for AI | any OpenAI-compatible endpoint. Examples: Groq `https://api.groq.com/openai/v1` + `llama-3.3-70b-versatile`; OpenRouter `https://openrouter.ai/api/v1` + a `:free` model; Gemini `https://generativelanguage.googleapis.com/v1beta/openai` + `gemini-2.0-flash`; Ollama `http://localhost:11434/v1` + `llama3.1` (no key) |
+| `LLM_FALLBACK_MODELS` | optional | comma-separated models tried when the primary returns 5xx/429/times out (e.g. `gemini-3-flash-preview,gemini-flash-lite-latest`); `LLM_TIMEOUT_SECONDS` (45) / `LLM_MAX_RETRIES` (1) |
 | `LLM_TOOL_MODE` | optional | `auto` (native function calling, fallback to context injection), `native`, `context` |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | only if `LLM_PROVIDER=anthropic` | |
 | `MODEL_DIR`, `UPLOAD_DIR` | optional | default `./data/models`, `./data/uploads` |
@@ -101,6 +102,31 @@ cd frontend; npx tsc --noEmit ; npm run lint ; npm run build
 Latest local run (2026-11-12): see the bottom of this file.
 
 ## 8. Deployment
+
+### Live (free tiers) – deployed 2026-11-12
+
+| Piece | Host | Where |
+|---|---|---|
+| Frontend (Next.js) | Vercel Hobby, project `solar-proj` | https://solar-proj-nine.vercel.app – `frontend/vercel.json` pins the Next.js preset |
+| Backend (FastAPI, Docker) | Render free, Blueprint `render.yaml`, service `solar-backend-9mkn` (Singapore) | https://solar-backend-9mkn.onrender.com (`/api/health`, `/docs`) |
+| Database | Neon free, project `solar-proj` (aws-ap-southeast-1, Postgres 18) | connection string only in Render env `DATABASE_URL` |
+| Repo | GitHub private `Anshuman-Alok-Gupta/solar_proj` | Render auto-deploys on push to `main` (changes under `backend/` only) |
+
+* **Secrets** live only in the Render service env (DATABASE_URL, ADMIN_*, SEMS_*, LLM_API_KEY, CORS_ORIGINS)
+  and Vercel env (`NEXT_PUBLIC_API_BASE_URL`, build-time). Non-secret settings are in `render.yaml`.
+* **Frontend redeploy:** `cd frontend && npx vercel@latest deploy --prod` (unless the Vercel GitHub app was
+  given repo access, in which case pushes deploy automatically). Changing the backend URL requires a rebuild.
+* **CORS:** backend `CORS_ORIGINS` must equal the Vercel origin exactly.
+* **Ephemeral disk:** Render free has no persistent disk. Model artifacts are stored in Postgres
+  (`model_artifacts`, migration 0002) and re-cached on first use; uploads under `/tmp` are temporary.
+* **Sleep:** Render free sleeps after ~15 min idle (cold start ~1 min). A free cron-job.org job hitting
+  `/api/health` every 10 min keeps it awake (one service fits in the free monthly instance hours);
+  the in-process weather/SEMS scheduler only runs while awake.
+* **Gemini free tier** occasionally returns 503 "high demand"; `LLM_FALLBACK_MODELS` lists models tried in
+  order (sticky per answer so tool-call thought signatures stay valid).
+* Data was migrated with `pg_dump -Fc --no-owner --no-privileges` → `pg_restore` into Neon.
+
+### Docker / self-hosted
 
 * `docker compose up --build` starts `db`, `backend` (runs migrations, then uvicorn) and `frontend` (standalone Next build). Set secrets in `.env` first; change `NEXT_PUBLIC_API_BASE_URL` build arg to the public backend URL.
 * Without Docker: run uvicorn behind a reverse proxy and, for the frontend, `npm run build` then `node .next/standalone/server.js` (copy `.next/static` and `public` next to it as the Dockerfile does; `npm start` also works locally but warns because `output: "standalone"` is set). Schedule nothing extra – the API process runs the SEMS/weather jobs.
