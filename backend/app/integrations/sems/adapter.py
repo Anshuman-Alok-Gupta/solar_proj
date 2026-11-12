@@ -134,6 +134,16 @@ STAT_ITEM_MAP = {
 }
 
 
+def _looks_unmetered(vals: dict[str, Any]) -> bool:
+    """SEMS's placeholder pattern without a meter: no grid exchange and consumption == production."""
+    if "exported_kwh" not in vals or "imported_kwh" not in vals:
+        return False  # grid exchange not reported at all: nothing to judge by
+    gen = vals.get("generation_kwh") or 0.0
+    exp, imp = vals.get("exported_kwh") or 0.0, vals.get("imported_kwh") or 0.0
+    cons = vals.get("consumption_kwh")
+    return gen > 0 and exp == 0 and imp == 0 and (cons is None or abs(cons - gen) < 1e-6)
+
+
 def statistics_to_daily_rows(
     stats: dict[str, Any],
     *,
@@ -173,17 +183,18 @@ def statistics_to_daily_rows(
         flags: list[str] = []
         if d >= today_local:
             flags.append("partial_day")
-        if not has_meter:
+        metered = has_meter and not _looks_unmetered(vals)
+        if not metered:
             flags.append("no_smart_meter_consumption_unmeasured")
         rows.append(
             {
                 "plant_id": plant_id,
                 "date": d,
                 "generation_kwh": gen,
-                "consumption_kwh": vals.get("consumption_kwh") if has_meter else None,
-                "exported_kwh": vals.get("exported_kwh") if has_meter else None,
-                "imported_kwh": vals.get("imported_kwh") if has_meter else None,
-                "self_consumed_kwh": vals.get("self_consumed_kwh") if has_meter else None,
+                "consumption_kwh": vals.get("consumption_kwh") if metered else None,
+                "exported_kwh": vals.get("exported_kwh") if metered else None,
+                "imported_kwh": vals.get("imported_kwh") if metered else None,
+                "self_consumed_kwh": vals.get("self_consumed_kwh") if metered else None,
                 "source": DataSource.SEMS_API,
                 "derived_from": "sems_daily_statistics",
                 "is_complete": d < today_local,

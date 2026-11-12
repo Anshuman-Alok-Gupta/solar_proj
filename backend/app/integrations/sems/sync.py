@@ -199,7 +199,8 @@ def run_sems_sync(
             for d in devices
         ]
         flow = client.station_flow(station_id)
-        has_meter = bool(flow.get("consumFlag")) or bool(flow.get("flows"))
+        # "flows" is present even without a meter; only consumFlag means consumption is metered
+        has_meter = bool(flow.get("consumFlag"))
         details["has_smart_meter"] = has_meter
         details["station_refresh_time"] = flow.get("refreshTime")
         ensure_inverters(db, plant, devices)

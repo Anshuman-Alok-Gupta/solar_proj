@@ -71,3 +71,33 @@ def test_slab_savings_api(client, auth, plant, db):
     assert sum(m["value"] for m in s["months"]) == pytest.approx(s["estimated_value"], abs=0.05)
     monthly = client.get(f"/api/plants/{pid}/analytics/savings/monthly", headers=auth).json()
     assert monthly["items"] and "surplus_kwh" in monthly["items"][0]
+
+
+def test_sems_placeholder_meter_values_are_not_treated_as_measurements():
+    from datetime import date
+
+    from app.integrations.sems.adapter import statistics_to_daily_rows
+
+    def item(name, val):
+        return {"item": name, "statisticsList": [{"date": "2026-11-10", "val": val}]}
+
+    stats = {
+        "dataList": [
+            item("proSystemTotalStats", 14.6),
+            item("proConsumStats", 14.6),
+            item("proGridStats", 0),
+            item("proPurchaseStats", 0),
+            item("proSelfConsumStats", 14.6),
+        ]
+    }
+    row = statistics_to_daily_rows(
+        stats, plant_id=1, today_local=date(2026, 11, 12), has_meter=True, sync_log_id=None
+    )[0]
+    assert row["exported_kwh"] is None and row["consumption_kwh"] is None and row["self_consumed_kwh"] is None
+    assert "no_smart_meter_consumption_unmeasured" in row["quality_flags"]
+    # real meter data (grid exchange present) is kept
+    stats["dataList"][2] = item("proGridStats", 6.1)
+    row = statistics_to_daily_rows(
+        stats, plant_id=1, today_local=date(2026, 11, 12), has_meter=True, sync_log_id=None
+    )[0]
+    assert row["exported_kwh"] == 6.1 and row["quality_flags"] is None
