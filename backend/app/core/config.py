@@ -49,10 +49,13 @@ class Settings(BaseSettings):
     )
     llm_api_key: str | None = None
     llm_model: str | None = None  # e.g. llama-3.3-70b-versatile, google/gemini-2.0-flash-exp:free, llama3.1
+    # Comma-separated models tried in order when the primary is overloaded (5xx), rate-limited or times out.
+    llm_fallback_models: str = ""
     llm_tool_mode: str = "auto"  # auto | native | context  (context = backend pre-fetches data; works without function calling)
     llm_max_tokens: int = 4000
     llm_max_tool_rounds: int = 6
-    llm_timeout_seconds: float = 120.0
+    llm_timeout_seconds: float = 45.0
+    llm_max_retries: int = 1
     # Anthropic (only used when LLM_PROVIDER=anthropic)
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-opus-5-5"

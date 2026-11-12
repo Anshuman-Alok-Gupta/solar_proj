@@ -272,7 +272,8 @@ def run_analyst_turn(
         usage={
             **usage,
             "provider": provider.name,
-            "model": settings.llm_model_name,
+            # the model that actually answered (may be a fallback)
+            "model": (getattr(provider, "models", None) or [settings.llm_model_name])[0],
             "tool_mode": used_mode,
             "tool_rounds": rounds,
             "finish_reason": finish,

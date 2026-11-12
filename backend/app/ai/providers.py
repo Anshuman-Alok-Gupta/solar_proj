@@ -76,11 +76,13 @@ class OpenAICompatibleProvider(BaseProvider):
         self.model = settings.llm_model or ""
         if not self.model:
             raise LLMError("LLM_MODEL is not set")
+        fallbacks = [m.strip() for m in (settings.llm_fallback_models or "").split(",") if m.strip()]
+        self.models = [self.model, *[m for m in fallbacks if m != self.model]]
         self.client = OpenAI(
             api_key=settings.llm_api_key or "not-needed",
             base_url=settings.llm_base_url or None,
             timeout=settings.llm_timeout_seconds,
-            max_retries=2,
+            max_retries=settings.llm_max_retries,
         )
 
     @staticmethod
@@ -101,13 +103,13 @@ class OpenAICompatibleProvider(BaseProvider):
         from openai import (
             APIConnectionError,
             APIStatusError,
+            APITimeoutError,
             AuthenticationError,
             BadRequestError,
             RateLimitError,
         )
 
         payload: dict[str, Any] = {
-            "model": self.model,
             "messages": [{"role": "system", "content": system}, *messages],
             "max_tokens": max_tokens,
             "temperature": 0.2,
@@ -116,7 +118,7 @@ class OpenAICompatibleProvider(BaseProvider):
             payload["tools"] = self._to_openai_tools(tools)
             payload["tool_choice"] = "auto"
         try:
-            resp = self.client.chat.completions.create(**payload)
+            resp = self._create_with_fallback(payload)
         except AuthenticationError as exc:
             raise LLMError("The LLM API key was rejected (check LLM_API_KEY)") from exc
         except RateLimitError as exc:
@@ -126,9 +128,15 @@ class OpenAICompatibleProvider(BaseProvider):
             if tools and ("tool" in msg.lower() or "function" in msg.lower()):
                 raise LLMToolsUnsupported(msg) from exc
             raise LLMError(f"The LLM provider rejected the request: {msg[:300]}") from exc
+        except APITimeoutError as exc:
+            raise LLMError("The LLM provider did not answer in time; try again shortly") from exc
         except APIConnectionError as exc:
             raise LLMError("Could not reach the LLM provider (check LLM_BASE_URL / network)") from exc
         except APIStatusError as exc:
+            if exc.status_code >= 500:
+                raise LLMError(
+                    f"The LLM provider is overloaded (error {exc.status_code}); try again shortly"
+                ) from exc
             raise LLMError(f"LLM provider error {exc.status_code}") from exc
         choice = resp.choices[0]
         msg = choice.message
@@ -152,6 +160,35 @@ class OpenAICompatibleProvider(BaseProvider):
             usage=usage,
             raw_assistant_message=msg,
         )
+
+    def _create_with_fallback(self, payload: dict[str, Any]):
+        """Try each configured model in turn on transient provider failures.
+
+        A provider instance serves one analyst turn; once a model answers it becomes sticky
+        (moved to the front) so a tool loop never mixes models - Gemini thought signatures
+        are only valid for the model that produced them.
+        """
+        from openai import APIStatusError, APITimeoutError, RateLimitError
+
+        last_exc: Exception | None = None
+        for model in list(self.models):
+            try:
+                resp = self.client.chat.completions.create(model=model, **payload)
+            except (RateLimitError, APITimeoutError) as exc:
+                last_exc = exc
+            except APIStatusError as exc:
+                if exc.status_code < 500:
+                    raise
+                last_exc = exc
+            else:
+                if model != self.models[0]:
+                    log.warning("LLM model %s unavailable; answered by fallback %s", self.models[0], model)
+                    self.models.remove(model)
+                    self.models.insert(0, model)
+                return resp
+            log.info("LLM model %s failed (%s); trying next", model, type(last_exc).__name__)
+        assert last_exc is not None
+        raise last_exc
 
     @staticmethod
     def _tool_call_dict(tc: Any) -> dict[str, Any]:
