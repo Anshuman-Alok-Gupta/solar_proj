@@ -40,7 +40,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 import httpx
@@ -495,6 +495,29 @@ class SemsClient:
             op="station production",
         )
         return data if isinstance(data, dict) else {}
+
+    def power_curve(self, station_id: str, day: date, tz_offset_hours: float) -> list[dict[str, Any]]:
+        """One-minute PV power (kW) for a past or current day: ``[{"tp": "YYYY-MM-DD HH:MM:SS", "power": kW|None}]``.
+
+        Same call the SEMS+ web portal makes for its daily power chart; ``timeZone`` is the
+        station's UTC offset with the sign flipped (UTC+5:30 -> -5.5). Times are station-local.
+        """
+        data = self.call(
+            "/sems-plant/api/v1/hems/power/statisticsAndPreV2",
+            json_body={
+                "stationId": station_id,
+                "items": ["pSystem"],
+                "timeScale": 1,
+                "timeZone": -tz_offset_hours,
+                "startTime": f"{day.isoformat()} 00:00:00",
+                "endTime": f"{day.isoformat()} 23:59:59",
+            },
+            op="power curve",
+        )
+        for series in (data or {}).get("dataList", []) if isinstance(data, dict) else []:
+            if isinstance(series, dict) and series.get("item") == "pSystem":
+                return [p for p in series.get("powerData") or [] if isinstance(p, dict)]
+        return []
 
     # ------------------------------------------------------------------ endpoints (legacy)
 

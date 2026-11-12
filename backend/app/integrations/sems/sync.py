@@ -5,6 +5,10 @@ Modes
 * full        : daily statistics from the plant installation date (or station creation) to today
 * incremental : daily statistics for the last N days (SEMS revises recent days) + live snapshot
 * snapshot    : live telemetry only (one EnergyReading row per inverter)
+* curves      : backfill 5-minute power curves for past days (no daily statistics)
+
+Power curves: incremental runs refresh today's curve and backfill a few missing past days per
+run (polite: one request per day, spaced out), so the full history fills in automatically.
 Every run is recorded in ``sync_logs`` with counts, range, message and error.
 """
 
@@ -15,13 +19,15 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import String, cast, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.models import DailyEnergy, DataSource, EnergyReading, Inverter, Plant, SyncLog, SyncStatus
 from app.integrations.sems.adapter import (
+    CURVE_FLAG,
     build_live_reading,
+    curve_to_readings,
     parse_station_local_time,
     statistics_to_daily_rows,
 )
@@ -31,6 +37,9 @@ from app.services.energy_store import upsert_daily_energy, upsert_energy_reading
 log = logging.getLogger(__name__)
 
 INCREMENTAL_LOOKBACK_DAYS = 7
+CURVE_MIN_READINGS = 60  # a day with fewer curve-derived readings than this is re-fetched
+CURVE_BACKFILL = {"incremental": 4, "full": 31, "curves": 62}
+CURVE_REQUEST_SPACING_S = 4.0
 STATS_CHUNK_DAYS = 180
 
 
@@ -119,6 +128,73 @@ def sync_daily_statistics(
         totals["updated"] += res["updated"]
         totals["skipped"] += res["skipped"]
         cursor = chunk_end + timedelta(days=1)
+    return totals
+
+
+def _days_needing_curves(db: Session, plant: Plant, today: date, limit: int) -> list[date]:
+    """Today first, then past SEMS days (newest first) without a usable intraday curve."""
+    tz = ZoneInfo(plant.timezone)
+    first = db.scalar(
+        select(func.min(DailyEnergy.date)).where(
+            DailyEnergy.plant_id == plant.id, DailyEnergy.source == DataSource.SEMS_API
+        )
+    )
+    if first is None:
+        return [today]
+    start_utc = datetime.combine(first, datetime.min.time(), tzinfo=tz).astimezone(UTC)
+    rows = db.execute(
+        select(EnergyReading.ts).where(
+            EnergyReading.plant_id == plant.id,
+            EnergyReading.ts >= start_utc,
+            cast(EnergyReading.quality_flags, String).like(f"%{CURVE_FLAG}%"),
+        )
+    ).all()
+    per_day: dict[date, int] = {}
+    for (ts,) in rows:
+        d = ts.astimezone(tz).date()
+        per_day[d] = per_day.get(d, 0) + 1
+    out = [today]
+    d = today - timedelta(days=1)
+    while d >= first and len(out) < limit + 1:
+        if per_day.get(d, 0) < CURVE_MIN_READINGS:
+            out.append(d)
+        d -= timedelta(days=1)
+    return out
+
+
+def sync_power_curves(
+    db: Session, client: SemsClient, plant: Plant, station_id: str, today: date, log_id: int, max_days: int
+) -> dict[str, Any]:
+    import time
+
+    tz = ZoneInfo(plant.timezone)
+    inverters = list(db.scalars(select(Inverter).where(Inverter.plant_id == plant.id)))
+    inverter_id = inverters[0].id if len(inverters) == 1 else None  # station curve == the inverter
+    days = _days_needing_curves(db, plant, today, max_days)
+    totals: dict[str, Any] = {"days": 0, "readings": 0, "empty_days": [], "remaining_estimate": None}
+    for i, d in enumerate(days):
+        if i:
+            time.sleep(CURVE_REQUEST_SPACING_S)
+        noon = datetime.combine(d, datetime.min.time(), tzinfo=tz) + timedelta(hours=12)
+        offset_h = (noon.utcoffset() or timedelta()).total_seconds() / 3600
+        try:
+            points = client.power_curve(station_id, d, offset_h)
+        except SemsError as exc:
+            if i == 0:
+                raise
+            # keep what was stored; the next scheduled run continues the backfill
+            totals["stopped"] = f"{exc} (continues on the next run)"
+            break
+        rows = curve_to_readings(
+            points, plant_id=plant.id, inverter_id=inverter_id, tz_name=plant.timezone, sync_log_id=log_id
+        )
+        if not rows:
+            totals["empty_days"].append(d.isoformat())
+            continue
+        upsert_energy_readings(db, rows)
+        db.commit()
+        totals["days"] += 1
+        totals["readings"] += len(rows)
     return totals
 
 
@@ -230,6 +306,11 @@ def run_sems_sync(
             log_row.records_inserted += daily["inserted"]
             log_row.records_updated += daily["updated"]
 
+        if mode in CURVE_BACKFILL:
+            curves = sync_power_curves(db, client, plant, station_id, today, log_row.id, CURVE_BACKFILL[mode])
+            details["curves"] = curves
+            log_row.records_fetched += curves["readings"]
+
         if mode in ("incremental", "snapshot"):
             readings = take_snapshot(db, client, plant, station_id, devices, log_row.id)
             details["snapshot"] = [
@@ -254,6 +335,8 @@ def run_sems_sync(
         parts = []
         if "daily" in details:
             parts.append(f"{details['daily']['fetched']} daily rows ({details['daily']['inserted']} new)")
+        if "curves" in details:
+            parts.append(f"power curves for {details['curves']['days']} day(s)")
         if "snapshot" in details:
             parts.append(f"{len(details['snapshot'])} live reading(s)")
         log_row.message = ", ".join(parts) or "nothing to do"

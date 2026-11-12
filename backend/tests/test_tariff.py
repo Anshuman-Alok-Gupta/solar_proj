@@ -101,3 +101,21 @@ def test_sems_placeholder_meter_values_are_not_treated_as_measurements():
         stats, plant_id=1, today_local=date(2026, 11, 12), has_meter=True, sync_log_id=None
     )[0]
     assert row["exported_kwh"] == 6.1 and row["quality_flags"] is None
+
+
+def test_power_curve_downsampled_to_5_minute_readings():
+    from datetime import UTC, datetime
+
+    from app.integrations.sems.adapter import CURVE_FLAG, curve_to_readings
+
+    pts = [{"tp": "2026-11-10 06:00:00", "power": None}]
+    pts += [{"tp": f"2026-11-10 12:0{m}:00", "power": 3.0 + m * 0.1} for m in range(5)]  # 12:00-12:04
+    pts += [{"tp": "2026-11-10 12:05:00", "power": 2.0}, {"tp": "bad", "power": 1}]
+    rows = curve_to_readings(pts, plant_id=1, inverter_id=7, tz_name="Asia/Kolkata", sync_log_id=None)
+    assert len(rows) == 2
+    first, second = rows
+    # 12:00-12:04 IST -> interval ending 12:05 IST = 06:35 UTC, mean 3.2 kW
+    assert first["ts"] == datetime(2026, 11, 10, 6, 35, tzinfo=UTC)
+    assert first["power_w"] == 3200.0 and first["energy_kwh"] == pytest.approx(3.2 * 5 / 60, abs=1e-4)
+    assert first["quality_flags"] == [CURVE_FLAG] and first["inverter_id"] == 7
+    assert "partial_interval" in second["quality_flags"]

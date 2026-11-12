@@ -26,6 +26,8 @@ Last updated: 2026-11-12 (see git log for later changes)
 - [x] Reports page (`/reports`): live preview, save, PDF export (fpdf2, `GET /reports/{id}/pdf`) and CSV export.
 - [x] Sharing: one-time invite links (viewer / editor roles, 7-day expiry, token stored as SHA-256), member management in Settings, `/invite/<token>` sign-up page; viewers are read-only server-side (AI analyst still allowed). Change-password in Settings. Migration `0003`.
 - [x] Slab tariffs under net metering (MSEB/MSEDCL): `tariff_slabs` + `monthly_consumption_kwh` (migration `0004`, `app/services/tariff.py`). Generation cancels the top slabs of the household's monthly use; surplus is valued at the year-end settlement rate (₹2.82 for FY 2026–27). Savings card on Overview, slab editor in Settings.
+- [x] SEMS placeholder meter values (export 0 / import 0 / consumption = production) are no longer stored as measurements.
+- [x] Intraday history from SEMS power curves (no manual report downloads).
 - [x] Frontend automated tests (Vitest + Testing Library: API client, formatters, components) in CI.
 - [x] Measured training memory: train all 7 models + SHAP + forecast + detect peaks at ~360 MB RSS, inside Render free's 512 MB (`MALLOC_ARENA_MAX=2` set to limit fragmentation).
 
@@ -33,7 +35,7 @@ Last updated: 2026-11-12 (see git log for later changes)
 
 1. Refine the household consumption figure in Settings (currently 400 units/month, from the owner's 300–500 estimate); the savings estimate depends on it.
 2. Panel tilt is unknown (owner confirmed 2026-11-12); 18° stays as the assumption. It only affects the weather feature (tilted irradiance), and the models learn the scale from data.
-3. Import more historical 5-minute operation reports (one per day from the SEMS app) to enable intraday anomaly checks across days.
+3. ~~Import 5-minute operation reports by hand~~ no longer needed: the SEMS+ one-minute power curve (`/sems-plant/api/v1/hems/power/statisticsAndPreV2`) is fetched automatically, downsampled to 5-minute readings; scheduled runs refresh today and backfill 4 missing past days per run (mode `curves` backfills up to 62 days on demand).
 4. After a few days of SEMS polling: verify live readings accumulate and live forecast scoring works on the deployed stack.
 5. Optional: e-mail delivery of invite links (currently copy/paste; no SMTP configured).
 
@@ -67,7 +69,7 @@ npm run dev   # http://localhost:3000  (login: ADMIN_EMAIL / ADMIN_PASSWORD from
 
 ## Test status (2026-11-12)
 
-- Backend: `ruff check` clean, `pytest` **51 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop, provider compat, sharing/roles, PDF, slab tariff).
+- Backend: `ruff check` clean, `pytest` **53 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop, provider compat, sharing/roles, PDF, slab tariff).
 - Frontend: `tsc` clean, `eslint` 0 errors, `vitest` **17 passed**, `next build` success (11 routes).
 - Live smoke test against the running stack: all pages and their API calls return 200 with the real 61-day dataset.
 - Details and commands: `HANDOFF.md` §7 and §10.

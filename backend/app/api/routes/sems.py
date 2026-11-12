@@ -66,7 +66,7 @@ def test_connection(plant: PlantDep) -> dict:
 
 @router.post("/sync", response_model=SyncLogOut)
 def trigger_sync(
-    plant: PlantDep, db: DB, mode: str = Query("incremental", pattern="^(incremental|full|snapshot)$")
+    plant: PlantDep, db: DB, mode: str = Query("incremental", pattern="^(incremental|full|snapshot|curves)$")
 ):
     _require_configured()
     return run_sems_sync(db, plant, mode=mode)

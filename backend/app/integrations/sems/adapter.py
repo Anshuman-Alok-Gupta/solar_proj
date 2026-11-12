@@ -12,7 +12,7 @@ Factor codes verified against the real account on 2026-11-11 (GW6000-SDT-20):
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -199,6 +199,57 @@ def statistics_to_daily_rows(
                 "derived_from": "sems_daily_statistics",
                 "is_complete": d < today_local,
                 "quality_flags": flags or None,
+                "sync_log_id": sync_log_id,
+            }
+        )
+    return rows
+
+
+CURVE_FLAG = "sems_power_curve_5min_mean"
+
+
+def curve_to_readings(
+    points: list[dict[str, Any]],
+    *,
+    plant_id: int,
+    inverter_id: int | None,
+    tz_name: str,
+    sync_log_id: int | None,
+    step_minutes: int = 5,
+) -> list[dict[str, Any]]:
+    """Downsample a one-minute SEMS power curve to ``step_minutes`` interval readings.
+
+    Each reading is stamped at the END of its interval (EnergyReading convention), carries the
+    mean power of the minutes present and the interval energy (mean kW x interval). Intervals
+    with no samples are skipped; zeros (night, outages) are kept.
+    """
+    tz = ZoneInfo(tz_name)
+    bins: dict[datetime, list[float]] = {}
+    for pt in points:
+        val = pt.get("power")
+        if val is None:
+            continue
+        try:
+            local = datetime.strptime(str(pt.get("tp")), "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+            kw = float(val)
+        except (TypeError, ValueError):
+            continue
+        minute = local.hour * 60 + local.minute
+        end_min = (minute // step_minutes + 1) * step_minutes
+        end_local = local.replace(hour=0, minute=0, second=0) + timedelta(minutes=end_min)
+        bins.setdefault(end_local, []).append(max(kw, 0.0))
+    rows = []
+    for end_local, vals in sorted(bins.items()):
+        mean_kw = sum(vals) / len(vals)
+        rows.append(
+            {
+                "plant_id": plant_id,
+                "inverter_id": inverter_id,
+                "ts": end_local.astimezone(UTC),
+                "power_w": round(mean_kw * 1000, 1),
+                "energy_kwh": round(mean_kw * step_minutes / 60, 4),
+                "source": DataSource.SEMS_API,
+                "quality_flags": [CURVE_FLAG] + (["partial_interval"] if len(vals) < step_minutes else []),
                 "sync_log_id": sync_log_id,
             }
         )
