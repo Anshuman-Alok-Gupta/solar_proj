@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import delete, func, select
 
-from app.api.deps import DB, CurrentUser, PlantDep, user_plants
+from app.api.deps import DB, CurrentUser, PlantDep, PlantOwnerDep, plant_role, user_plants
 from app.db.models import DailyEnergy, DataSource, EnergyReading, Plant
 from app.schemas.plant import InverterOut, PlantCreate, PlantOut, PlantUpdate
 
@@ -12,7 +12,10 @@ router = APIRouter(prefix="/plants", tags=["plants"])
 
 @router.get("", response_model=list[PlantOut])
 def list_plants(db: DB, user: CurrentUser) -> list[Plant]:
-    return user_plants(db, user)
+    plants = user_plants(db, user)
+    for p in plants:
+        p.access_role = plant_role(db, p, user)  # transient attribute read by PlantOut
+    return plants
 
 
 @router.post("", response_model=PlantOut, status_code=status.HTTP_201_CREATED)
@@ -25,21 +28,23 @@ def create_plant(payload: PlantCreate, db: DB, user: CurrentUser) -> Plant:
 
 
 @router.get("/{plant_id}", response_model=PlantOut)
-def get_plant(plant: PlantDep) -> Plant:
+def get_plant(plant: PlantDep, db: DB, user: CurrentUser) -> Plant:
+    plant.access_role = plant_role(db, plant, user)
     return plant
 
 
 @router.patch("/{plant_id}", response_model=PlantOut)
-def update_plant(payload: PlantUpdate, plant: PlantDep, db: DB) -> Plant:
+def update_plant(payload: PlantUpdate, plant: PlantDep, db: DB, user: CurrentUser) -> Plant:
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(plant, k, v)
     db.commit()
     db.refresh(plant)
+    plant.access_role = plant_role(db, plant, user)
     return plant
 
 
 @router.delete("/{plant_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_plant(plant: PlantDep, db: DB) -> None:
+def delete_plant(plant: PlantOwnerDep, db: DB) -> None:
     db.delete(plant)
     db.commit()
 

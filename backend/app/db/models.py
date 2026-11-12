@@ -511,3 +511,46 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
+
+
+# --------------------------------------------------------------------------- sharing
+
+
+class PlantRole(str, enum.Enum):
+    """Access granted to a non-owner. Owners and superusers implicitly have full access."""
+
+    VIEWER = "viewer"  # read-only (may still chat with the AI analyst)
+    EDITOR = "editor"  # everything except sharing and deleting the plant
+
+
+class PlantMember(Base):
+    __tablename__ = "plant_members"
+
+    plant_id: Mapped[int] = mapped_column(ForeignKey("plants.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default=PlantRole.VIEWER.value)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    user: Mapped[User] = relationship()
+
+
+class Invitation(Base):
+    """One-time invite link. Only the SHA-256 of the token is stored."""
+
+    __tablename__ = "invitations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    plant_id: Mapped[int] = mapped_column(
+        ForeignKey("plants.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default=PlantRole.VIEWER.value)
+    invited_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    plant: Mapped[Plant] = relationship()
+    invited_by: Mapped[User | None] = relationship()

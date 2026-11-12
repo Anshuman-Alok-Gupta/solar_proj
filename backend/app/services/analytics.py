@@ -557,7 +557,10 @@ def savings(
             out["estimated_value_if_all_exported"] = round(gen * exp, 2)
             out["estimated_value"] = round(gen * imp, 2)
             out["notes"].append(
-                "Headline estimate assumes all generation offsets grid purchases at the import tariff."
+                "Headline estimate assumes all generation offsets grid purchases at the import tariff. "
+                "Under net metering (e.g. MSEDCL/MSEB) that holds while yearly generation stays below "
+                "yearly consumption; surplus units still banked at the end of the financial year are "
+                "settled at the export rate instead (the 'all exported' figure is the floor)."
             )
         if plant.installation_cost and out.get("estimated_value") and len(df) >= 7:
             per_day = out["estimated_value"] / max(len(df), 1)

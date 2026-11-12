@@ -88,3 +88,5 @@ class PlantOut(ORMModel):
     created_at: datetime
     updated_at: datetime
     inverters: list[InverterOut] = []
+    # 'owner' | 'editor' | 'viewer' for the requesting user (set by the route)
+    access_role: str = "owner"

@@ -8,6 +8,7 @@ dependencies = [
     "apscheduler>=3.11.3",
     "catboost>=1.2.10",
     "fastapi[standard]>=0.162.4",
+    "fpdf2>=2.9.0",
     "httpx>=0.28.1",
     "joblib>=1.6.0",
     "lightgbm>=4.7.0",

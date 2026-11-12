@@ -32,7 +32,12 @@ services:
       - key: SEMS_PASSWORD
         sync: false
       - key: SEMS_SYNC_ENABLED
-        value: "false"
+        value: "true"
+      - key: SEMS_SYNC_INTERVAL_SECONDS
+        value: "900"
+      # fewer glibc malloc arenas: keeps the 512 MB free instance comfortable during training
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       - key: WEATHER_SYNC_ENABLED
         value: "true"
       - key: LLM_PROVIDER

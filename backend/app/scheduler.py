@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -46,6 +47,7 @@ def start_scheduler() -> None:
             "interval",
             seconds=settings.sems_sync_interval_seconds,
             id="sems_sync",
+            next_run_time=datetime.now(UTC) + timedelta(seconds=90),
             max_instances=1,
             coalesce=True,
         )
@@ -56,6 +58,7 @@ def start_scheduler() -> None:
             "interval",
             seconds=settings.weather_sync_interval_seconds,
             id="weather_sync",
+            next_run_time=datetime.now(UTC) + timedelta(seconds=45),
             max_instances=1,
             coalesce=True,
         )

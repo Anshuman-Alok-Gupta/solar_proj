@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, status
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import desc, select
 
 from app.api.deps import DB, PlantDep
 from app.db.models import Report, ReportKind
+from app.services.report_pdf import report_pdf
 from app.services.reports import build_report, report_csv, save_report
 
 router = APIRouter(prefix="/plants/{plant_id}/reports", tags=["reports"])
@@ -86,6 +87,18 @@ def get_report_csv(report_id: int, plant: PlantDep, db: DB):
         report_csv(r),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="report_{r.id}.csv"'},
+    )
+
+
+@router.get("/{report_id}/pdf")
+def get_report_pdf(report_id: int, plant: PlantDep, db: DB) -> Response:
+    r = db.get(Report, report_id)
+    if r is None or r.plant_id != plant.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
+    return Response(
+        report_pdf(r, plant),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="report_{r.id}.pdf"'},
     )
 
 
