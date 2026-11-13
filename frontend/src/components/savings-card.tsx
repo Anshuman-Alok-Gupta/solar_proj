@@ -27,6 +27,8 @@ type SavingsData = {
 /** Estimated value of the generation to date (net metering; estimate, not a bill). */
 export function SavingsCard({ plantId }: { plantId: number }) {
   const q = useApi(() => endpoints.savings(plantId) as Promise<SavingsData>, [plantId]);
+  const bills = useApi(() => endpoints.bills(plantId), [plantId]);
+  const measured = bills.data?.summary;
   const d = q.data;
   const cur = d?.currency ?? "INR";
   return (
@@ -70,6 +72,13 @@ export function SavingsCard({ plantId }: { plantId: number }) {
             <Link href="/settings" className="text-xs underline">Set it in Settings</Link>
           </>
         ) : null}
+        {measured && measured.total_savings != null && (
+          <p className="border-t pt-2 text-xs">
+            <span className="font-medium">Measured from {measured.bills_with_savings} bill{measured.bills_with_savings === 1 ? "" : "s"}:</span>{" "}
+            <span className="tabular-nums">{money(measured.total_savings, cur)}</span> saved.{" "}
+            <Link href="/bills" className="underline">Details</Link>
+          </p>
+        )}
       </CardContent>
     </Card>
   );

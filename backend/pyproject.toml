@@ -21,6 +21,7 @@ dependencies = [
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
     "pyjwt>=2.15.1",
+    "pypdf>=6.0",
     "python-dateutil>=4.0.0",
     "python-multipart>=0.0.33",
     "scikit-learn>=1.9.1",

@@ -352,6 +352,80 @@ export interface Capabilities {
   app_env: string;
 }
 
+// ---------------------------------------------------------------- electricity bills (numbers only)
+
+export interface BillSlab { up_to_kwh: number | null; energy_rate: number; fac_rate: number | null }
+export interface BillTariff { slabs: BillSlab[]; wheeling_per_kwh: number | null; duty_pct: number | null }
+
+export interface BillFields {
+  bill_month?: string | null;
+  bill_date?: string | null;
+  due_date?: string | null;
+  reading_from: string;
+  reading_to: string;
+  bill_period_months?: number | null;
+  tariff_category?: string | null;
+  sanctioned_load_kw?: number | null;
+  net_metered?: boolean;
+  import_kwh: number;
+  export_kwh: number;
+  generation_kwh?: number | null;
+  billed_kwh?: number | null;
+  export_offset_kwh?: number | null;
+  banked_kwh?: number | null;
+  prev_banked_kwh?: number | null;
+  fixed_charge?: number | null;
+  energy_charge?: number | null;
+  wheeling_charge?: number | null;
+  fac_charge?: number | null;
+  electricity_duty?: number | null;
+  tax_on_sale?: number | null;
+  other_charges?: number | null;
+  current_bill?: number | null;
+  amount_payable?: number | null;
+  tariff?: BillTariff | null;
+  source?: "pdf" | "manual";
+}
+
+export interface BillAnalysis {
+  period_months: number;
+  days: number;
+  generation_kwh: number | null;
+  generation_source: "bill" | "inverter" | null;
+  inverter_generation: { kwh: number | null; days_with_data: number; days: number; complete: boolean };
+  inverter_vs_meter_pct?: number;
+  consumption_kwh?: number;
+  self_consumed_kwh?: number;
+  self_consumption_pct?: number | null;
+  solar_share_pct?: number | null;
+  actual_bill: number | null;
+  without_solar?: { energy: number; fac: number; wheeling: number; duty: number; fixed_and_other: number; total: number };
+  savings?: number;
+  savings_per_generated_kwh?: number | null;
+  bank: { offset_kwh: number | null; added_kwh: number | null; balance_kwh: number | null; settlement_rate: number | null; added_value_at_settlement: number | null };
+  check?: { billed_kwh: number; computed_variable_charges: number; variable_charges_on_bill: number };
+  notes: string[];
+}
+
+export interface Bill extends BillFields { id: number; updated_at: string | null; analysis: BillAnalysis }
+
+export interface BillsSummary {
+  bills: number;
+  bills_with_savings: number;
+  total_savings: number | null;
+  total_without_solar: number | null;
+  total_actual: number | null;
+  avg_monthly_savings: number | null;
+  consumption_kwh: number | null;
+  generation_kwh: number | null;
+  bank_balance_kwh: number | null;
+  bank_value_at_settlement: number | null;
+  first_reading: string | null;
+  last_reading: string | null;
+}
+
+export interface BillParseResult { fields: BillFields; warnings: string[]; existing_bill_id: number | null }
+
 // ---------------------------------------------------------------- endpoint helpers
 
 export const endpoints = {
@@ -415,6 +489,16 @@ export const endpoints = {
   invitation: (token: string) => api<InvitationInfo>(`/invitations/${encodeURIComponent(token)}`),
   acceptInvitation: (token: string, password: string, full_name?: string) => api<{ access_token: string }>(`/invitations/${encodeURIComponent(token)}/accept`, { body: { password, full_name } }),
   changePassword: (current_password: string, new_password: string) => api<void>("/auth/change-password", { body: { current_password, new_password } }),
+  bills: (id: number) => api<{ bills: Bill[]; summary: BillsSummary }>(`/plants/${id}/bills`),
+  billParse: (id: number, file: File) => {
+    const form = new FormData();
+    // MSEDCL e-bill filenames contain the consumer number: never send the real name.
+    form.append("file", file, "bill.pdf");
+    return api<BillParseResult>(`/plants/${id}/bills/parse`, { method: "POST", form });
+  },
+  billSave: (id: number, body: BillFields) => api<Bill>(`/plants/${id}/bills`, { body }),
+  billUpdate: (id: number, billId: number, body: BillFields) => api<Bill>(`/plants/${id}/bills/${billId}`, { method: "PUT", body }),
+  billDelete: (id: number, billId: number) => api<void>(`/plants/${id}/bills/${billId}`, { method: "DELETE" }),
   aiStatus: (id: number) => api<{ configured: boolean; provider: string; model: string | null; tool_mode: string; suggested_questions: string[]; setup_hint: string | null }>(`/plants/${id}/ai/status`),
   aiChat: (id: number, message: string, conversation_id?: number | null) => api<{ conversation_id: number; reply: string; tool_calls: { tool: string; input: Record<string, unknown>; ok: boolean; error?: string }[]; usage: Record<string, unknown> }>(`/plants/${id}/ai/chat`, { body: { message, conversation_id } }),
   aiConversations: (id: number) => api<{ items: { id: number; title: string | null; updated_at: string; message_count: number }[] }>(`/plants/${id}/ai/conversations`),

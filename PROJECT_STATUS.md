@@ -1,6 +1,6 @@
 # PROJECT_STATUS
 
-Last updated: 2026-11-12 (see git log for later changes)
+Last updated: 2026-11-13 (see git log for later changes)
 
 ## Completed
 
@@ -29,6 +29,7 @@ Last updated: 2026-11-12 (see git log for later changes)
 - [x] SEMS placeholder meter values (export 0 / import 0 / consumption = production) are no longer stored as measurements.
 - [x] Intraday history from SEMS power curves (no manual report downloads).
 - [x] Nightly ML upkeep (21:00 IST, `app/ml/nightly.py`): retrain all 7 models when the data changed, keep the active algorithm unless another is >5 % better on validation, issue 3-day forecasts, run anomaly detection, prune model files older than the last 2 runs (metrics kept). Logged as `sync_logs` source `ml`; `POST /ml/nightly-run`, `GET /ml/nightly-status`.
+- [x] Electricity bills (`/bills`, migration `0005`): upload an MSEDCL e-bill PDF, read locally with `pypdf` (no AI; `app/integrations/msedcl/bill_pdf.py`), review/correct, save; or enter by hand. Only an allow-list of numbers is extracted (units, solar bank, charges, tariff table, dates); name, address, consumer/meter/bill numbers and payment history are never read, the PDF is not stored, the browser uploads it as `bill.pdf` (real filenames contain the consumer number), and bills are not exposed to the AI analyst. Per bill (`app/services/bills.py`): consumption = import + generation − export, the bill without solar from the bill's own tariff (energy + FAC per slab with limits scaled by the bill period, wheeling, duty on those, same fixed charge), savings = that − the bill's current charges, solar-bank additions valued at the settlement rate. First bill (Oct 2026, 25 days): ₹4,992 without solar vs ₹445 charged.
 - [x] Frontend automated tests (Vitest + Testing Library: API client, formatters, components) in CI.
 - [x] Measured training memory: train all 7 models + SHAP + forecast + detect peaks at ~360 MB RSS, inside Render free's 512 MB (`MALLOC_ARENA_MAX=2` set to limit fragmentation).
 
@@ -39,6 +40,7 @@ Last updated: 2026-11-12 (see git log for later changes)
 3. ~~Import 5-minute operation reports by hand~~ no longer needed: the SEMS+ one-minute power curve (`/sems-plant/api/v1/hems/power/statisticsAndPreV2`) is fetched automatically, downsampled to 5-minute readings; scheduled runs refresh today and backfill 4 missing past days per run (mode `curves` backfills up to 62 days on demand).
 4. After a few days of SEMS polling: verify live readings accumulate and live forecast scoring works on the deployed stack.
 5. Optional: e-mail delivery of invite links (currently copy/paste; no SMTP configured).
+6. Bills: add each new MSEDCL bill. Assumption to verify on the first bill with billed units: electricity duty applies to energy + FAC + wheeling but not the fixed charge (the per-bill "model check" compares this with the bill). The bill's generation meter read 456 units for 19 Sep–14 Oct while the inverter logged ~393 (−14 %, local DB); compare on the live data and future bills.
 
 ## Known issues / caveats
 
@@ -68,10 +70,10 @@ npm install
 npm run dev   # http://localhost:3000  (login: ADMIN_EMAIL / ADMIN_PASSWORD from .env)
 ```
 
-## Test status (2026-11-12)
+## Test status (2026-11-13)
 
-- Backend: `ruff check` clean, `pytest` **55 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop, provider compat, sharing/roles, PDF, slab tariff).
-- Frontend: `tsc` clean, `eslint` 0 errors, `vitest` **17 passed**, `next build` success (11 routes).
+- Backend: `ruff check` clean, `pytest` **67 passed** (energy store, ingestion, SEMS client mocked, ML, API, AI loop, provider compat, sharing/roles, PDF, slab tariff, nightly ML, bill reader on a synthetic bill + any real bills in `data/samples/private/bills/`).
+- Frontend: `tsc` clean, `eslint` 0 errors, `vitest` **22 passed**, `next build` success (12 routes).
 - Live smoke test against the running stack: all pages and their API calls return 200 with the real 61-day dataset.
 - Details and commands: `HANDOFF.md` §7 and §10.
 

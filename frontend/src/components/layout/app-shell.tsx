@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, BarChart3, Bot, Database, Eye, FileText, FlaskConical, LayoutDashboard, LogOut, Menu, Settings, ShieldAlert, Sun, TrendingUp } from "lucide-react";
+import { Activity, BarChart3, Bot, Database, Eye, FileText, FlaskConical, LayoutDashboard, LogOut, Menu, Receipt, Settings, ShieldAlert, Sun, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -19,6 +19,7 @@ const NAV = [
   { href: "/anomalies", label: "Anomaly Centre", icon: ShieldAlert },
   { href: "/analyst", label: "AI Energy Analyst", icon: Bot },
   { href: "/reports", label: "Reports", icon: FileText },
+  { href: "/bills", label: "Electricity Bills", icon: Receipt },
   { href: "/model-lab", label: "Model Lab", icon: FlaskConical },
   { href: "/data", label: "Data Management", icon: Database },
   { href: "/settings", label: "Settings", icon: Settings },

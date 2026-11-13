@@ -147,6 +147,10 @@ Latest local run (2026-11-12): see the bottom of this file.
   **editor** = everything except sharing and deleting the plant (`PlantOwnerDep`). Superusers act as owners.
 * `POST /api/auth/change-password` backs the "Your account" card in Settings.
 
+### Electricity bills
+
+`/bills` (API `/api/plants/{id}/bills`): `POST /parse` reads an MSEDCL e-bill PDF in memory with `pypdf` and returns the numbers for review (nothing saved); `POST` saves (replaces the bill for the same month), `PUT /{id}`, `DELETE /{id}`, `GET` lists bills with per-bill analysis and a summary. The reader locates fields from the English labels and table positions (the Marathi labels use a legacy font that does not extract). Privacy: allow-listed numbers only; the `utility_bills` table has no columns for personal details; the PDF is never written to disk or stored; the browser renames the upload to `bill.pdf`; the AI analyst has no bill tool. Real sample bills belong in `data/samples/private/bills/` (git-ignored); `tests/test_bills.py` uses a synthetic bill with fake details and additionally checks any real bills present on the machine.
+
 ### Docker / self-hosted
 
 * `docker compose up --build` starts `db`, `backend` (runs migrations, then uvicorn) and `frontend` (standalone Next build). Set secrets in `.env` first; change `NEXT_PUBLIC_API_BASE_URL` build arg to the public backend URL.
@@ -157,15 +161,16 @@ Latest local run (2026-11-12): see the bottom of this file.
 
 See `PROJECT_STATUS.md` → "Incomplete / next priorities".
 
-## 10. Latest test summary (2026-11-12, local Windows machine)
+## 10. Latest test summary (2026-11-13, local Windows machine)
 
 | Check | Result |
 |---|---|
 | `uv run ruff check .` (backend) | All checks passed |
-| `uv run pytest -q` (backend, PostgreSQL 18, `solar_test` DB) | **34 passed** in ~20 s |
+| `uv run pytest -q` (backend, PostgreSQL 18, `solar_test` DB) | **67 passed** in ~85 s |
 | `npx tsc --noEmit` (frontend) | clean |
 | `npm run lint` (frontend) | 0 errors, 1 intentional warning (hard redirect on 401) |
-| `npm run build` (frontend, Next 16 / Turbopack) | success, 9 routes |
+| `npm test` (frontend, Vitest) | **22 passed** |
+| `npm run build` (frontend, Next 16 / Turbopack) | success, 12 routes |
 | Live stack smoke test | backend `/api/health` 200; all 9 frontend routes 200; CORS preflight 200; every page's API calls 200 with real data (61 days, 901.2 kWh) |
 | Real integrations | SEMS web + legacy login OK, full + incremental sync OK; Open-Meteo observed (61 d) + forecast (7 d) sync OK; import of both SEMS export types OK |
 | Not executed here | `docker compose up` (Docker not installed on this machine), live LLM provider call (no key configured yet) |

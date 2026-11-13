@@ -557,3 +557,53 @@ class Invitation(Base):
 
     plant: Mapped[Plant] = relationship()
     invited_by: Mapped[User | None] = relationship()
+
+
+class UtilityBill(Base):
+    """One electricity bill (MSEDCL net metering), numbers only.
+
+    Deliberately has no columns for the consumer's name, address, consumer/meter number or bill
+    number: the PDF reader never extracts them and the PDF itself is not stored.
+    """
+
+    __tablename__ = "utility_bills"
+    __table_args__ = (UniqueConstraint("plant_id", "bill_month", name="uq_utility_bill_month"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    plant_id: Mapped[int] = mapped_column(
+        ForeignKey("plants.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    bill_month: Mapped[date] = mapped_column(Date, nullable=False)  # first day of the billing month
+    bill_date: Mapped[date | None] = mapped_column(Date)
+    due_date: Mapped[date | None] = mapped_column(Date)
+    reading_from: Mapped[date] = mapped_column(Date, nullable=False)  # previous meter reading
+    reading_to: Mapped[date] = mapped_column(Date, nullable=False)  # current meter reading
+    bill_period_months: Mapped[float | None] = mapped_column(Float)
+    tariff_category: Mapped[str | None] = mapped_column(String(64))
+    sanctioned_load_kw: Mapped[float | None] = mapped_column(Float)
+    net_metered: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # units (kWh) for the reading period
+    import_kwh: Mapped[float] = mapped_column(Float, nullable=False)
+    export_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    generation_kwh: Mapped[float | None] = mapped_column(Float)  # MSEDCL solar generation meter
+    billed_kwh: Mapped[float | None] = mapped_column(Float)
+    export_offset_kwh: Mapped[float | None] = mapped_column(Float)
+    banked_kwh: Mapped[float | None] = mapped_column(Float)
+    prev_banked_kwh: Mapped[float | None] = mapped_column(Float)
+    # charges (currency)
+    fixed_charge: Mapped[float | None] = mapped_column(Float)
+    energy_charge: Mapped[float | None] = mapped_column(Float)
+    wheeling_charge: Mapped[float | None] = mapped_column(Float)
+    fac_charge: Mapped[float | None] = mapped_column(Float)
+    electricity_duty: Mapped[float | None] = mapped_column(Float)
+    tax_on_sale: Mapped[float | None] = mapped_column(Float)
+    other_charges: Mapped[float | None] = mapped_column(Float)
+    current_bill: Mapped[float | None] = mapped_column(Float)
+    amount_payable: Mapped[float | None] = mapped_column(Float)
+    # {"slabs": [{"up_to_kwh", "energy_rate", "fac_rate"}], "wheeling_per_kwh", "duty_pct"}
+    tariff: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
