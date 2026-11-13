@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ErrorState, LoadingBlock } from "@/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { endpoints } from "@/lib/api";
-import { kwh, money, num } from "@/lib/format";
+import { kwh, money, num, shortDate } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 
 type SavingsData = {
@@ -24,23 +24,46 @@ type SavingsData = {
   period?: { start: string | null; days: number };
 };
 
-/** Estimated value of the generation to date (net metering; estimate, not a bill). */
+/** Savings to date: measured from uploaded bills, estimated only for days no bill covers yet. */
 export function SavingsCard({ plantId }: { plantId: number }) {
   const q = useApi(() => endpoints.savings(plantId) as Promise<SavingsData>, [plantId]);
   const bills = useApi(() => endpoints.bills(plantId), [plantId]);
-  const measured = bills.data?.summary;
+  const toDate = bills.data?.summary.to_date ?? null;
   const d = q.data;
   const cur = d?.currency ?? "INR";
+  const label = toDate ? (toDate.estimated ? "(bills + estimate)" : "(from bills)") : "(estimate)";
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
-          <IndianRupee className="h-4 w-4" /> Savings so far <span className="text-xs font-normal text-muted-foreground">(estimate)</span>
+          <IndianRupee className="h-4 w-4" /> Savings so far <span className="text-xs font-normal text-muted-foreground">{label}</span>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
-        {q.loading && !d ? (
+        {(q.loading && !d) || (bills.loading && !bills.data) ? (
           <LoadingBlock lines={3} />
+        ) : toDate ? (
+          <>
+            <div className="text-2xl font-semibold tabular-nums">{money(toDate.total, cur)}</div>
+            <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-xs">
+              <dt className="text-muted-foreground">
+                Measured from {toDate.measured_bills} bill{toDate.measured_bills === 1 ? "" : "s"} ({shortDate(toDate.measured_from)} – {shortDate(toDate.measured_to)})
+              </dt>
+              <dd className="text-right tabular-nums">{money(toDate.measured, cur)}</dd>
+              {toDate.estimated_days > 0 && (
+                <>
+                  <dt className="text-muted-foreground">Estimated, {toDate.estimated_days} day{toDate.estimated_days === 1 ? "" : "s"} not on a bill yet</dt>
+                  <dd className="text-right tabular-nums">{toDate.estimate_missing_tariff && !toDate.estimated ? "—" : money(toDate.estimated, cur)}</dd>
+                </>
+              )}
+            </dl>
+            {toDate.estimate_missing_tariff && (
+              <p className="text-xs text-muted-foreground">Set a tariff in <Link href="/settings" className="underline">Settings</Link> to estimate the days not billed yet.</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Bill without solar minus the bill you paid. <Link href="/bills" className="underline">Bill details</Link>
+            </p>
+          </>
         ) : q.error ? (
           <ErrorState message={q.error} onRetry={q.refetch} />
         ) : d && d.estimated_value != null ? (
@@ -72,13 +95,6 @@ export function SavingsCard({ plantId }: { plantId: number }) {
             <Link href="/settings" className="text-xs underline">Set it in Settings</Link>
           </>
         ) : null}
-        {measured && measured.total_savings != null && (
-          <p className="border-t pt-2 text-xs">
-            <span className="font-medium">Measured from {measured.bills_with_savings} bill{measured.bills_with_savings === 1 ? "" : "s"}:</span>{" "}
-            <span className="tabular-nums">{money(measured.total_savings, cur)}</span> saved.{" "}
-            <Link href="/bills" className="underline">Details</Link>
-          </p>
-        )}
       </CardContent>
     </Card>
   );

@@ -273,6 +273,21 @@ def test_bills_api_upload_save_and_savings(client, auth, plant, db):
     assert s["bills"] == 1 and s["total_savings"] == lst["bills"][0]["analysis"]["savings"]
     assert s["bank_balance_kwh"] == 202 and s["bank_value_at_settlement"] == pytest.approx(202 * 2.82)
 
+    # savings to date: the bill's measured figure, plus an estimate only for inverter days outside
+    # the bill (2026-09-10..09-19 before it, 10-15..10-19 since the last reading)
+    client.patch(f"/api/plants/{pid}", headers=auth, json={"tariff_import_per_kwh": 8.0})
+    td = client.get(f"/api/plants/{pid}/bills", headers=auth).json()["summary"]["to_date"]
+    assert td["measured"] == s["total_savings"] and td["measured_bills"] == 1
+    assert (td["measured_from"], td["measured_to"]) == ("2026-09-20", "2026-10-14")
+    assert [(u["start"], u["end"], u["days"]) for u in td["unbilled"]] == [
+        ("2026-09-10", "2026-09-19", 10),
+        ("2026-10-15", "2026-10-19", 5),
+    ]
+    assert td["estimated_days"] == 15 and td["estimate_missing_tariff"] is False
+    est = sum(u["estimated_savings"] for u in td["unbilled"])
+    assert td["estimated"] == pytest.approx(est, abs=0.02)
+    assert td["total"] == pytest.approx(td["measured"] + est, abs=0.02)
+
     # manual entry without a generation meter falls back to the inverter
     manual = {
         "reading_from": "2026-09-19",

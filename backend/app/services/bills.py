@@ -20,7 +20,7 @@ re-computed against its own charges, so ``check`` shows how well the model match
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Plant, UtilityBill
 from app.services.analytics import daily_frame
+from app.services.analytics import savings as estimate_savings
 
 CHARGE_FIELDS = (
     "fixed_charge",
@@ -228,5 +229,61 @@ def bills_overview(db: Session, plant: Plant) -> dict[str, Any]:
         else None,
         "first_reading": bills[0].reading_from.isoformat() if bills else None,
         "last_reading": latest.reading_to.isoformat() if latest else None,
+        "to_date": savings_to_date(db, plant, [(b, a) for b, a in rows if a.get("savings") is not None]),
     }
     return {"bills": rows, "summary": summary}
+
+
+def savings_to_date(
+    db: Session, plant: Plant, measured: list[tuple[UtilityBill, dict[str, Any]]]
+) -> dict[str, Any] | None:
+    """Savings to date: measured from bills where a bill covers the days, estimated elsewhere.
+
+    A bill covers reading_from+1 .. reading_to (the same days as inverter_generation). Days with
+    inverter data outside every bill with savings (before the first reading, between bills, and
+    since the last reading, i.e. not billed yet) are valued with the tariff estimate.
+    """
+    if not measured:
+        return None
+    total_measured = sum(a["savings"] for _, a in measured)
+    periods = sorted((b.reading_from + timedelta(days=1), b.reading_to) for b, _ in measured)
+
+    gaps: list[tuple[date | None, date | None]] = []
+    cursor: date | None = None  # first day not yet covered
+    for start, end in periods:
+        if cursor is None or start > cursor:
+            gaps.append((cursor, start - timedelta(days=1)))
+        cursor = max(cursor, end + timedelta(days=1)) if cursor else end + timedelta(days=1)
+    gaps.append((cursor, None))
+
+    unbilled: list[dict[str, Any]] = []
+    estimate_missing = False
+    for start, end in gaps:
+        est = estimate_savings(db, plant, start, end)
+        days = est["period"]["days"]
+        if not days:
+            continue
+        value = est.get("estimated_value")
+        if value is None:
+            estimate_missing = True
+        unbilled.append(
+            {
+                "start": est["period"]["start"],
+                "end": est["period"]["end"],
+                "days": days,
+                "generation_kwh": est["generation_kwh"],
+                "estimated_savings": value,
+            }
+        )
+    estimated = sum(u["estimated_savings"] or 0 for u in unbilled)
+    return {
+        "total": _r(total_measured + estimated),
+        "measured": _r(total_measured),
+        "measured_bills": len(measured),
+        "measured_from": periods[0][0].isoformat(),
+        "measured_to": periods[-1][1].isoformat(),
+        "estimated": _r(estimated) if unbilled else None,
+        "estimated_days": sum(u["days"] for u in unbilled),
+        "estimate_missing_tariff": estimate_missing,
+        "unbilled": unbilled,
+    }

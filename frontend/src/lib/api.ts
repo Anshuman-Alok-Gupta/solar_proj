@@ -422,6 +422,20 @@ export interface BillsSummary {
   bank_value_at_settlement: number | null;
   first_reading: string | null;
   last_reading: string | null;
+  /** Measured savings from bills plus an estimate for days no bill covers yet. */
+  to_date: SavingsToDate | null;
+}
+
+export interface SavingsToDate {
+  total: number;
+  measured: number;
+  measured_bills: number;
+  measured_from: string;
+  measured_to: string;
+  estimated: number | null;
+  estimated_days: number;
+  estimate_missing_tariff: boolean;
+  unbilled: { start: string; end: string; days: number; generation_kwh: number; estimated_savings: number | null }[];
 }
 
 export interface BillParseResult { fields: BillFields; warnings: string[]; existing_bill_id: number | null }
